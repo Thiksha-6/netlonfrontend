@@ -1,38 +1,127 @@
-.App {
-  text-align: center;
+/* App.css - Add these styles at the top */
+
+/* Import Google Fonts for better typography */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+body {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
+/* Mobile Toggle Button Styles */
+.mobile-toggle-btn {
+  display: none !important;
+  position: fixed !important;
+  top: 15px !important;
+  left: 15px !important;
+  z-index: 1100 !important;
+  background-color: #2563eb !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 10px 12px !important;
+  cursor: pointer !important;
+  font-size: 20px !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.3s ease !important;
+}
+
+.mobile-toggle-btn:hover {
+  background-color: #1d4ed8 !important;
+  transform: scale(1.05) !important;
+}
+
+/* Header adjustments for mobile */
+@media (max-width: 768px) {
+  .mobile-toggle-btn {
+    display: block !important;
+  }
+  
+  /* Adjust header to accommodate toggle button */
+  .header {
+    padding-left: 70px !important;
   }
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+/* Main content adjustments */
+.main-content {
+  transition: margin-left 0.3s ease, padding-left 0.3s ease;
 }
 
-.App-link {
-  color: #61dafb;
+/* Overlay for mobile menu */
+.sidebar-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background-color: rgba(0, 0, 0, 0.5) !important;
+  z-index: 999 !important;
+  backdrop-filter: blur(2px);
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+/* Sidebar styles */
+.sidebar {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Responsive text */
+@media (max-width: 768px) {
+  .menu-text {
+    font-size: 16px !important;
   }
-  to {
-    transform: rotate(360deg);
+  
+  .sidebar-item {
+    padding: 15px !important;
+  }
+  
+  .icon {
+    font-size: 18px !important;
+  }
+}
+
+/* Remove default button focus outline but keep accessibility */
+button:focus {
+  outline: 2px solid #2563eb !important;
+  outline-offset: 2px !important;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Touch-friendly elements */
+button, 
+a, 
+input, 
+select {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Dashboard responsive styles */
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding-left: 15px !important;
+    padding-right: 15px !important;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr !important;
   }
 }
