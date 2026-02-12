@@ -6,6 +6,7 @@ import Quotation from "./components/quotation";
 import Header from "./components/header";
 import Sidebar from "./components/sidebar";
 import Invoice from "./components/invoice";
+import Inventory from "./components/inventory"
 import 'bootstrap/dist/css/bootstrap.min.css';
 import "./App.css";
 
@@ -69,6 +70,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/quotation" element={<Quotation />} />
               <Route path="/invoice" element={<Invoice />} />
+              <Route path="/inventory" element={<Inventory />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </div>

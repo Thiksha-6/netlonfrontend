@@ -1,143 +1,249 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
-  FaUsers,
+  FaFileInvoice,
   FaClipboardList,
   FaCalendarCheck,
   FaMoneyBillWave,
 } from "react-icons/fa";
+import axios from "axios";
 
 const Dashboard = () => {
-  const stats = [
+  const [quotations, setQuotations] = useState([]);
+  const [stats, setStats] = useState({
+    total_quotations: 0,
+    this_month: 0,
+    total_value: 0,
+    growth_percentage: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const API_BASE = "http://localhost:5000/api";
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await axios.get(`${API_BASE}/quotations?page=1&per_page=10`);
+      const data = res.data;
+
+      console.log("Dashboard data:", data); // For debugging
+
+      setQuotations(data.quotations || []);
+
+      // Properly map the stats from API response
+      setStats({
+        total_quotations: data.stats?.total_quotations || data.pagination?.total || 0,
+        this_month: data.stats?.this_month || 0,
+        total_value: data.stats?.total_value || 0,
+        growth_percentage: data.stats?.growth_percentage || 0
+      });
+    } catch (error) {
+      console.error("Dashboard Error:", error);
+      setError("Failed to load dashboard data. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={styles.loadingContainer}>
+        <div style={styles.loadingSpinner}></div>
+        <p style={styles.loadingText}>Loading Dashboard...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={styles.errorContainer}>
+        <p style={styles.errorText}>{error}</p>
+        <button onClick={fetchDashboardData} style={styles.retryButton}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const dashboardCards = [
     {
-      title: "Total Customers",
-      value: "128",
-      icon: <FaUsers size={30} />,
+      title: "Total Quotations",
+      value: stats.total_quotations,
+      icon: <FaFileInvoice size={28} />,
       color: "#4e73df",
+      bgColor: "rgba(78, 115, 223, 0.1)",
     },
     {
-      title: "Pending Quotations",
-      value: "24",
-      icon: <FaClipboardList size={30} />,
+      title: "This Month",
+      value: stats.this_month,
+      icon: <FaCalendarCheck size={28} />,
       color: "#1cc88a",
+      bgColor: "rgba(28, 200, 138, 0.1)",
     },
     {
-      title: "This Month Bills",
-      value: "56",
-      icon: <FaCalendarCheck size={30} />,
-      color: "#36b9cc",
-    },
-    {
-      title: "Monthly Revenue",
-      value: "₹ 1,45,670",
-      icon: <FaMoneyBillWave size={30} />,
+      title: "Total Value",
+      value: `₹ ${Number(stats.total_value || 0).toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`,
+      icon: <FaMoneyBillWave size={28} />,
       color: "#f6c23e",
+      bgColor: "rgba(246, 194, 62, 0.1)",
+    },
+    {
+      title: "Recent Records",
+      value: quotations.length,
+      icon: <FaClipboardList size={28} />,
+      color: "#36b9cc",
+      bgColor: "rgba(54, 185, 204, 0.1)",
     },
   ];
 
-  const recentInvoices = [
-    { id: "INV-1254", customer: "Raja Textiles", date: "21-12-2025", amount: "₹ 8,500", status: "Paid" },
-    { id: "INV-1253", customer: "Modern Furnishings", date: "20-12-2025", amount: "₹ 12,300", status: "Paid" },
-    { id: "INV-1252", customer: "City Hardware", date: "20-12-2025", amount: "₹ 5,670", status: "Pending" },
-    { id: "INV-1251", customer: "Green Homes", date: "19-12-2025", amount: "₹ 9,800", status: "Paid" },
-    { id: "INV-1250", customer: "Royal Constructions", date: "19-12-2025", amount: "₹ 15,200", status: "Pending" },
-    { id: "INV-1249", customer: "Premium Interiors", date: "18-12-2025", amount: "₹ 7,400", status: "Paid" },
-  ];
+  // Format date properly
+  const formatDate = (dateString) => {
+    if (!dateString) return "-";
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+    } catch (e) {
+      return dateString;
+    }
+  };
 
-  const recentQuotes = [
-    { id: "QUO-0341", customer: "Ramesh Traders", status: "Pending" },
-    { id: "QUO-0340", customer: "Kumar Hardware", status: "Converted" },
-    { id: "QUO-0339", customer: "Velu Furnishings", status: "Pending" },
-    { id: "QUO-0338", customer: "Sri Balaji Stores", status: "Converted" },
-  ];
+  // Get customer name from nested customerInfo object
+  const getCustomerName = (quotation) => {
+    return quotation.customerInfo?.billTo || quotation.bill_to || "N/A";
+  };
+
+  // Get grand total from nested totals object
+  const getGrandTotal = (quotation) => {
+    return quotation.totals?.grandTotal || quotation.grand_total || 0;
+  };
 
   return (
-    <div style={styles.container} className="dashboard-container">
-      <h2 style={styles.heading}>Dashboard - Netlon Billing System</h2>
+    <div style={styles.container}>
+      {/* Header with Welcome Message */}
+      <div style={styles.header}>
+        <div>
+          <h1 style={styles.heading}>Dashboard</h1>
+          <p style={styles.subheading}>
+            Welcome back! Here's what's happening with your quotations today.
+          </p>
+        </div>
+        <div style={styles.headerStats}>
+          <span style={styles.growthBadge}>
+            {stats.growth_percentage > 0 ? "↑" : "↓"} {Math.abs(stats.growth_percentage || 0)}% from last month
+          </span>
+        </div>
+      </div>
 
-      {/* Stat Cards */}
-      <div style={styles.cardGrid} className="stats-grid">
-        {stats.map((item, index) => (
+      {/* Stats Cards */}
+      <div style={styles.cardGrid}>
+        {dashboardCards.map((card, index) => (
           <div
             key={index}
-            style={{ ...styles.card, borderLeft: `6px solid ${item.color}` }}
-            className="stat-card"
+            style={{
+              ...styles.card,
+              borderLeft: `5px solid ${card.color}`,
+              backgroundColor: card.bgColor,
+            }}
           >
             <div>
-              <p style={styles.cardTitle}>{item.title}</p>
-              <h3 style={styles.cardValue}>{item.value}</h3>
+              <p style={styles.cardTitle}>{card.title}</p>
+              <h3 style={{ ...styles.cardValue, color: card.color }}>
+                {card.value}
+              </h3>
+              {card.title === "Total Value" && stats.growth_percentage !== 0 && (
+                <p style={styles.cardGrowth}>
+                  {stats.growth_percentage > 0 ? "+" : ""}
+                  {stats.growth_percentage}% from last month
+                </p>
+              )}
             </div>
-            <div style={{ color: item.color }}>{item.icon}</div>
+            <div style={{ ...styles.cardIcon, backgroundColor: card.bgColor, color: card.color }}>
+              {card.icon}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Recent Activity */}
-      <div style={styles.section} className="dashboard-section">
-        <h4 style={styles.sectionTitle}>Recent Billing Activities</h4>
-        <div style={styles.tableWrapper}>
-          <table style={styles.table} className="dashboard-table">
+      {/* Recent Quotations Section */}
+      <div style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <h4 style={styles.sectionTitle}>Recent Quotations</h4>
+          <span style={styles.recordCount}>
+            Total: {stats.total_quotations} quotations
+          </span>
+        </div>
+
+        <div style={styles.tableContainer}>
+          <table style={styles.table}>
             <thead>
               <tr>
-                <th>Invoice No</th>
-                <th>Customer</th>
-                <th>Date</th>
-                <th>Amount</th>
-                <th>Status</th>
+                <th style={styles.th}>Quotation No</th>
+                <th style={styles.th}>Customer</th>
+                <th style={styles.th}>Contact</th>
+                <th style={styles.th}>Date</th>
+                <th style={styles.th}>Estimate No</th>
+                <th style={styles.th}>Grand Total</th>
               </tr>
             </thead>
             <tbody>
-              {recentInvoices.map((invoice, index) => (
-                <tr key={index}>
-                  <td data-label="Invoice No">{invoice.id}</td>
-                  <td data-label="Customer">{invoice.customer}</td>
-                  <td data-label="Date">{invoice.date}</td>
-                  <td data-label="Amount">{invoice.amount}</td>
-                  <td data-label="Status" style={invoice.status === "Paid" ? styles.success : styles.pending}>
-                    {invoice.status}
+              {quotations.slice(0, 5).map((q) => (
+                <tr key={q.id} style={styles.tr}>
+                  <td style={styles.td}>
+                    <span style={styles.quotationNo}>{q.quotation_no || `Q-${q.id}`}</span>
+                  </td>
+                  <td style={styles.td}>
+                    <div style={styles.customerInfo}>
+                      <span style={styles.customerName}>{getCustomerName(q)}</span>
+                      {q.customerInfo?.stateName && (
+                        <span style={styles.customerState}>{q.customerInfo.stateName}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={styles.td}>
+                    <span style={styles.contactNo}>{q.customerInfo?.contactNo || "-"}</span>
+                  </td>
+                  <td style={styles.td}>
+                    <span style={styles.date}>
+                      {formatDate(q.quotation_date || q.customerInfo?.estimateDate)}
+                    </span>
+                  </td>
+                  <td style={styles.td}>
+                    <span style={styles.estimateNo}>
+                      {q.customerInfo?.estimateNo || "-"}
+                    </span>
+                  </td>
+                  <td style={styles.td}>
+                    <span style={styles.amount}>
+                      ₹ {Number(getGrandTotal(q)).toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
 
-      {/* Quick Stats & Recent Quotations */}
-      <div style={styles.bottomGrid} className="bottom-grid">
-        <div style={styles.section} className="dashboard-section">
-          <h4 style={styles.sectionTitle}>Quick Stats</h4>
-          <div style={styles.statsGrid} className="quick-stats-grid">
-            <div style={styles.statItem} className="quick-stat-item">
-              <p style={styles.statLabel}>Today's Sales</p>
-              <p style={styles.statValue}>₹ 8,500</p>
+          {quotations.length === 0 && (
+            <div style={styles.emptyState}>
+              <FaClipboardList size={48} style={{ color: "#d1d3e2", marginBottom: "15px" }} />
+              <p style={styles.emptyStateText}>No quotations available</p>
+              <p style={styles.emptyStateSubtext}>Create your first quotation to get started</p>
             </div>
-            <div style={styles.statItem} className="quick-stat-item">
-              <p style={styles.statLabel}>This Week</p>
-              <p style={styles.statValue}>₹ 45,670</p>
-            </div>
-            <div style={styles.statItem} className="quick-stat-item">
-              <p style={styles.statLabel}>Active Products</p>
-              <p style={styles.statValue}>15</p>
-            </div>
-            <div style={styles.statItem} className="quick-stat-item">
-              <p style={styles.statLabel}>Avg. Bill Value</p>
-              <p style={styles.statValue}>₹ 2,850</p>
-            </div>
-          </div>
-        </div>
-
-        <div style={styles.section} className="dashboard-section">
-          <h4 style={styles.sectionTitle}>Recent Quotations</h4>
-          <div style={styles.quoteList} className="quote-list">
-            {recentQuotes.map((quote, index) => (
-              <div key={index} style={styles.quoteItem} className="quote-item">
-                <span>{quote.id} - {quote.customer}</span>
-                <span style={quote.status === "Converted" ? styles.success : styles.pending}>
-                  {quote.status}
-                </span>
-              </div>
-            ))}
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -151,253 +257,239 @@ const styles = {
     paddingRight: "25px",
     backgroundColor: "#f8f9fc",
     minHeight: "100vh",
-    boxSizing: "border-box",
+  },
+  loadingContainer: {
+    paddingTop: "100px",
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: "100vh",
+  },
+  loadingSpinner: {
+    width: "50px",
+    height: "50px",
+    border: "5px solid #f3f3f3",
+    borderTop: "5px solid #4e73df",
+    borderRadius: "50%",
+    animation: "spin 1s linear infinite",
+    marginBottom: "20px",
+  },
+  loadingText: {
+    color: "#5a5c69",
+    fontSize: "1.1rem",
+  },
+  errorContainer: {
+    paddingTop: "100px",
+    textAlign: "center",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: "100vh",
+  },
+  errorText: {
+    color: "#e74a3b",
+    fontSize: "1.1rem",
+    marginBottom: "20px",
+  },
+  retryButton: {
+    padding: "10px 20px",
+    backgroundColor: "#4e73df",
+    color: "white",
+    border: "none",
+    borderRadius: "5px",
+    cursor: "pointer",
+    fontSize: "1rem",
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "25px",
   },
   heading: {
-    marginBottom: "20px",
-    fontSize: "26px",
+    margin: 0,
+    fontSize: "28px",
+    fontWeight: "700",
+    color: "#5a5c69",
+  },
+  subheading: {
+    margin: "5px 0 0",
+    fontSize: "14px",
+    color: "#858796",
+  },
+  headerStats: {
+    display: "flex",
+    alignItems: "center",
+  },
+  growthBadge: {
+    padding: "8px 16px",
+    backgroundColor: "#e3e6f0",
+    borderRadius: "20px",
+    fontSize: "14px",
     fontWeight: "600",
-    color: "#333",
+    color: "#4e73df",
   },
   cardGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "20px",
     marginBottom: "30px",
   },
   card: {
     background: "#fff",
-    padding: "20px",
-    borderRadius: "12px",
+    padding: "25px",
+    borderRadius: "15px",
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    alignItems: "flex-start",
+    boxShadow: "0 4px 15px rgba(0,0,0,0.05)",
+    transition: "transform 0.2s, box-shadow 0.2s",
+    cursor: "pointer",
+    ":hover": {
+      transform: "translateY(-5px)",
+      boxShadow: "0 8px 25px rgba(0,0,0,0.1)",
+    },
   },
   cardTitle: {
     margin: 0,
-    fontSize: "14px",
-    color: "#6c757d",
+    fontSize: "13px",
+    color: "#858796",
+    textTransform: "uppercase",
+    fontWeight: "700",
+    letterSpacing: "0.5px",
   },
   cardValue: {
-    margin: "5px 0 0",
+    margin: "10px 0 5px",
     fontSize: "24px",
+    fontWeight: "700",
+  },
+  cardGrowth: {
+    margin: 0,
+    fontSize: "12px",
+    color: "#1cc88a",
     fontWeight: "600",
+  },
+  cardIcon: {
+    width: "50px",
+    height: "50px",
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   section: {
     background: "#fff",
-    padding: "20px",
-    borderRadius: "12px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    padding: "25px",
+    borderRadius: "15px",
+    boxShadow: "0 4px 15px rgba(0,0,0,0.05)",
+  },
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: "20px",
   },
   sectionTitle: {
-    marginBottom: "15px",
+    margin: 0,
     fontSize: "18px",
-    fontWeight: "600",
+    fontWeight: "700",
+    color: "#5a5c69",
   },
-  tableWrapper: {
+  recordCount: {
+    fontSize: "14px",
+    color: "#858796",
+    backgroundColor: "#f8f9fc",
+    padding: "5px 12px",
+    borderRadius: "15px",
+  },
+  tableContainer: {
     overflowX: "auto",
-    WebkitOverflowScrolling: "touch",
   },
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "600px",
+    minWidth: "800px",
   },
-  success: {
-    color: "green",
-    fontWeight: "600",
+  th: {
+    padding: "15px",
+    textAlign: "left",
+    borderBottom: "2px solid #e3e6f0",
+    color: "#858796",
+    fontWeight: "700",
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    backgroundColor: "#f8f9fc",
   },
-  pending: {
-    color: "orange",
-    fontWeight: "600",
+  tr: {
+    borderBottom: "1px solid #e3e6f0",
+    transition: "background-color 0.2s",
+    ":hover": {
+      backgroundColor: "#f8f9fc",
+    },
   },
-  bottomGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "20px",
-  },
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "15px",
-  },
-  statItem: {
-    padding: "10px",
-    textAlign: "center",
-  },
-  statLabel: {
-    margin: 0,
+  td: {
+    padding: "15px",
     fontSize: "14px",
-    color: "#6c757d",
+    color: "#5a5c69",
   },
-  statValue: {
-    margin: "5px 0 0",
-    fontSize: "20px",
-    fontWeight: "600",
-    color: "#333",
+  quotationNo: {
+    fontWeight: "700",
+    color: "#4e73df",
   },
-  quoteList: {
+  customerInfo: {
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
   },
-  quoteItem: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "10px",
-    borderBottom: "1px solid #eee",
+  customerName: {
+    fontWeight: "600",
+    color: "#5a5c69",
+  },
+  customerState: {
+    fontSize: "12px",
+    color: "#858796",
+    marginTop: "3px",
+  },
+  contactNo: {
+    color: "#858796",
+  },
+  date: {
+    color: "#858796",
+  },
+  estimateNo: {
+    color: "#858796",
+  },
+  amount: {
+    fontWeight: "700",
+    color: "#1cc88a",
+  },
+  emptyState: {
+    textAlign: "center",
+    padding: "60px 20px",
+  },
+  emptyStateText: {
+    fontSize: "16px",
+    fontWeight: "600",
+    color: "#5a5c69",
+    marginBottom: "10px",
+  },
+  emptyStateSubtext: {
+    fontSize: "14px",
+    color: "#858796",
   },
 };
 
-// Media queries for Dashboard
-const dashboardMediaQueries = `
-  /* Tablet styles */
-  @media (max-width: 768px) {
-    .dashboard-container {
-      padding-top: 70px !important;
-      padding-left: 15px !important;
-      padding-right: 15px !important;
-    }
-    
-    .stats-grid {
-      grid-template-columns: repeat(2, 1fr) !important;
-      gap: 15px !important;
-    }
-    
-    .stat-card {
-      padding: 15px !important;
-    }
-    
-    .dashboard-section {
-      padding: 15px !important;
-    }
-    
-    .section-title {
-      font-size: 16px !important;
-    }
-    
-    .heading {
-      font-size: 22px !important;
-      margin-bottom: 15px !important;
-    }
-    
-    .card-value {
-      font-size: 20px !important;
-    }
-    
-    .bottom-grid {
-      grid-template-columns: 1fr !important;
-      gap: 15px !important;
-    }
-    
-    .dashboard-table {
-      min-width: 500px !important;
-    }
-    
-    .stat-value {
-      font-size: 18px !important;
-    }
-  }
-  
-  /* Mobile styles */
-  @media (max-width: 480px) {
-    .dashboard-container {
-      padding-top: 65px !important;
-      padding-left: 10px !important;
-      padding-right: 10px !important;
-    }
-    
-    .stats-grid {
-      grid-template-columns: 1fr !important;
-      gap: 12px !important;
-    }
-    
-    .stat-card {
-      padding: 12px !important;
-    }
-    
-    .dashboard-section {
-      padding: 12px !important;
-    }
-    
-    .heading {
-      font-size: 20px !important;
-      text-align: center !important;
-    }
-    
-    .card-value {
-      font-size: 18px !important;
-    }
-    
-    .card-title {
-      font-size: 13px !important;
-    }
-    
-    .quick-stats-grid {
-      grid-template-columns: 1fr !important;
-      gap: 12px !important;
-    }
-    
-    .quick-stat-item {
-      padding: 8px !important;
-    }
-    
-    .stat-value {
-      font-size: 16px !important;
-    }
-    
-    .stat-label {
-      font-size: 13px !important;
-    }
-    
-    /* Make table responsive */
-    .dashboard-table thead {
-      display: none !important;
-    }
-    
-    .dashboard-table tr {
-      display: block !important;
-      margin-bottom: 10px !important;
-      border: 1px solid #ddd !important;
-      border-radius: 8px !important;
-      padding: 10px !important;
-    }
-    
-    .dashboard-table td {
-      display: block !important;
-      text-align: right !important;
-      padding: 8px 10px !important;
-      position: relative !important;
-      border-bottom: 1px solid #eee !important;
-    }
-    
-    .dashboard-table td:last-child {
-      border-bottom: none !important;
-    }
-    
-    .dashboard-table td::before {
-      content: attr(data-label) !important;
-      position: absolute !important;
-      left: 10px !important;
-      font-weight: 600 !important;
-      color: #333 !important;
-    }
-    
-    /* Responsive quote items */
-    .quote-item {
-      flex-direction: column !important;
-      align-items: flex-start !important;
-      gap: 5px !important;
-    }
+// Add animation keyframes
+const styleSheet = document.createElement("style");
+styleSheet.textContent = `
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
   }
 `;
-
-// Add dashboard styles
-const dashboardStyleSheet = document.createElement("style");
-dashboardStyleSheet.textContent = dashboardMediaQueries;
-document.head.appendChild(dashboardStyleSheet);
+document.head.appendChild(styleSheet);
 
 export default Dashboard;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Button, Form, Table, Row, Col, Spinner, Alert, Pagination } from "react-bootstrap";
-import { Printer, Download, MessageCircle, FileText, PlusCircle, Trash2, Edit, QuoteIcon, RefreshCw, Search, Filter, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Eye } from "lucide-react";
+import { Printer, Download, MessageCircle, FileText, PlusCircle, Trash2, Edit, QuoteIcon, RefreshCw, Search, Filter, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Eye, FileDown, Receipt } from "lucide-react";
+import { jsPDF } from "jspdf";
 
 // API Base URL
 const API_BASE_URL = "http://localhost:5000/api";
@@ -13,6 +14,7 @@ const QuotationPage = () => {
     phone: "+91 9790569529",
     address: "Ryan Complex Vadavalli Road, Edayarpalayam, Coimbatore-25",
     branch: "Edayarpalayam",
+    gstin: "33BECPR927M1ZU"
   });
 
   // ================= BANK DETAILS =================
@@ -32,8 +34,9 @@ const QuotationPage = () => {
     billTo: "",
     stateName: "",
     contactNo: "",
+    customerGstin: "", // Added customer GSTIN field
     estimateNo: "",
-    estimateDate: "",
+    estimateDate: ""
   });
 
   const [items, setItems] = useState([
@@ -56,6 +59,11 @@ const QuotationPage = () => {
     growth_percentage: 0
   });
 
+  // ================= INVENTORY STATE =================
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [searchTerms, setSearchTerms] = useState({});
+  const [showSuggestions, setShowSuggestions] = useState({});
+
   // ================= PAGINATION STATE =================
   const [pagination, setPagination] = useState({
     currentPage: 1,
@@ -66,6 +74,7 @@ const QuotationPage = () => {
 
   // ================= CALCULATIONS =================
   const totalAmount = items.reduce((a, b) => a + b.amount, 0);
+  const grandTotal = totalAmount;
 
   // ================= API FUNCTIONS =================
   const fetchQuotations = async (page = 1, perPage = 10) => {
@@ -106,6 +115,19 @@ const QuotationPage = () => {
     }
   };
 
+  // ================= INVENTORY API FUNCTIONS =================
+  const fetchInventory = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/inventory/`);
+      if (response.ok) {
+        const data = await response.json();
+        setInventoryItems(data);
+      }
+    } catch (err) {
+      console.error('Error fetching inventory:', err);
+    }
+  };
+
   // ================= HANDLERS =================
   const handleCustomerChange = (e) =>
     setCustomerInfo({ ...customerInfo, [e.target.name]: e.target.value });
@@ -117,6 +139,36 @@ const QuotationPage = () => {
       data[i].amount = data[i].qty * data[i].rate;
     }
     setItems(data);
+  };
+
+  const handleDescriptionSearch = (i, value) => {
+    const newSearchTerms = { ...searchTerms, [i]: value };
+    setSearchTerms(newSearchTerms);
+    
+    handleItemChange(i, "description", value);
+    
+    // Find matching inventory items
+    if (value.length >= 2) {
+      const matches = inventoryItems.filter(item => 
+        item.description.toLowerCase().includes(value.toLowerCase())
+      );
+      const newShowSuggestions = { ...showSuggestions, [i]: matches.length > 0 };
+      setShowSuggestions(newShowSuggestions);
+    } else {
+      const newShowSuggestions = { ...showSuggestions, [i]: false };
+      setShowSuggestions(newShowSuggestions);
+    }
+  };
+
+  const handleSelectInventoryItem = (i, item) => {
+    handleItemChange(i, "description", item.description);
+    handleItemChange(i, "rate", item.rate);
+    
+    const newSearchTerms = { ...searchTerms, [i]: item.description };
+    setSearchTerms(newSearchTerms);
+    
+    const newShowSuggestions = { ...showSuggestions, [i]: false };
+    setShowSuggestions(newShowSuggestions);
   };
 
   const addItem = () =>
@@ -219,7 +271,8 @@ const QuotationPage = () => {
         amount: item.amount
       })),
       totals: { 
-        totalAmount
+        totalAmount,
+        grandTotal
       }
     };
 
@@ -270,10 +323,13 @@ const QuotationPage = () => {
       billTo: "",
       stateName: "",
       contactNo: "",
+      customerGstin: "", // Reset customer GSTIN
       estimateNo: "",
-      estimateDate: "",
+      estimateDate: ""
     });
     setItems([{ description: "", qty: 1, rate: 0, amount: 0 }]);
+    setSearchTerms({});
+    setShowSuggestions({});
     setEditId(null);
     setError("");
     setSuccess("");
@@ -298,8 +354,9 @@ const QuotationPage = () => {
         billTo: quote.customerInfo.billTo || "",
         stateName: quote.customerInfo.stateName || "",
         contactNo: quote.customerInfo.contactNo || "",
+        customerGstin: quote.customerInfo.customerGstin || "", // Added customer GSTIN
         estimateNo: quote.customerInfo.estimateNo || "",
-        estimateDate: quote.customerInfo.estimateDate || "",
+        estimateDate: quote.customerInfo.estimateDate || ""
       });
       setItems(quote.items.map(item => ({
         description: item.description,
@@ -338,43 +395,387 @@ const QuotationPage = () => {
     }
   };
 
-  // ================= DOWNLOAD AS HTML =================
-  const handleDownload = (quote) => {
-    const html = generateQuotationHTML(quote);
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Quotation_${quote.customerInfo.estimateNo || quote.id}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  // ================= DOWNLOAD QUOTATION AS PDF =================
+  const handleDownloadQuotationPDF = (quote) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let yPos = 15;
+    
+    // Add watermark
+    doc.addImage(LOGO_PATH, 'PNG', pageWidth/2 - 50, pageHeight/2 - 50, 100, 100, undefined, 'NONE', 0.1);
+    
+    // Add company header
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(companyInfo.name, pageWidth / 2, yPos, { align: "center" });
+    yPos += 7;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(companyInfo.description, pageWidth / 2, yPos, { align: "center" });
+    yPos += 5;
+    doc.text(`Phone: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
+    yPos += 5;
+    doc.text(companyInfo.address, pageWidth / 2, yPos, { align: "center" });
+    yPos += 10;
+    
+    // Add title
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("QUOTATION", pageWidth / 2, yPos, { align: "center" });
+    yPos += 10;
+    
+    // Add line separator
+    doc.setLineWidth(0.5);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 10;
+    
+    // Customer details
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Customer Details:", 14, yPos);
+    yPos += 7;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Name: ${quote.customerInfo.billTo}`, 14, yPos);
+    doc.text(`Quotation No: Q-${quote.id}`, pageWidth - 70, yPos);
+    yPos += 5;
+    
+    doc.text(`Contact: ${quote.customerInfo.contactNo}`, 14, yPos);
+    doc.text(`Estimate No: ${quote.customerInfo.estimateNo || 'N/A'}`, pageWidth - 70, yPos);
+    yPos += 5;
+    
+    doc.text(`State: ${quote.customerInfo.stateName || 'N/A'}`, 14, yPos);
+    doc.text(`Date: ${quote.customerInfo.estimateDate || new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
+    yPos += 5;
+    
+    // Add customer GSTIN
+    doc.text(`Customer GSTIN: ${quote.customerInfo.customerGstin || 'N/A'}`, 14, yPos);
+    doc.text(`Branch: ${companyInfo.branch}`, pageWidth - 70, yPos);
+    yPos += 5;
+    
+    // Add line separator
+    doc.setLineWidth(0.5);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 5;
+    
+    // Items table header
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("S.No", 14, yPos);
+    doc.text("Description", 30, yPos);
+    doc.text("Qty", 140, yPos);
+    doc.text("Rate (₹)", 155, yPos);
+    doc.text("Amount (₹)", 180, yPos);
+    yPos += 7;
+    
+    // Add line under header
+    doc.setLineWidth(0.3);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 5;
+    
+    // Items
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    quote.items.forEach((item, index) => {
+      if (yPos > pageHeight - 50) {
+        doc.addPage();
+        yPos = 15;
+      }
+      
+      doc.text(`${index + 1}`, 14, yPos);
+      
+      const descriptionLines = doc.splitTextToSize(item.description, 100);
+      if (descriptionLines.length > 1) {
+        doc.text(descriptionLines[0], 30, yPos);
+        yPos += 5;
+        for (let i = 1; i < descriptionLines.length; i++) {
+          doc.text(descriptionLines[i], 30, yPos);
+          yPos += 5;
+        }
+        yPos -= 5 * (descriptionLines.length - 1);
+      } else {
+        doc.text(item.description, 30, yPos);
+      }
+      
+      doc.text(item.qty.toString(), 140, yPos);
+      doc.text(`₹${item.rate.toFixed(2)}`, 155, yPos);
+      doc.text(`₹${item.amount.toFixed(2)}`, 180, yPos);
+      yPos += 7;
+    });
+    
+    // Add line separator
+    yPos += 5;
+    doc.setLineWidth(0.5);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 10;
+    
+    // Totals
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("TOTAL AMOUNT:", pageWidth - 70, yPos);
+    doc.text(`₹${quote.totals.grandTotal.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+    yPos += 15;
+    
+    // Bank details
+    if (yPos > pageHeight - 80) {
+      doc.addPage();
+      yPos = 15;
+    }
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Bank Details:", 14, yPos);
+    yPos += 7;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Account Holder: ${bankDetails.accountHolder}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Account Number: ${bankDetails.accountNumber}`, 14, yPos);
+    yPos += 5;
+    doc.text(`IFSC Code: ${bankDetails.ifsc}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Branch: ${bankDetails.branch}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Bank: HDFC BANK`, 14, yPos);
+    yPos += 10;
+    
+    // Footer
+    doc.setFontSize(9);
+    doc.text("Thank you for your business!", pageWidth / 2, yPos, { align: "center" });
+    yPos += 5;
+    doc.text(`For any queries, please contact: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
+    
+    // Save the PDF
+    doc.save(`Quotation_${quote.customerInfo.estimateNo || quote.id}.pdf`);
   };
 
- // ================= PRINT =================
-const handlePrint = (quote) => {
-  const html = generateQuotationHTML(quote);
-  const printWindow = window.open('', '_blank', 'width=800,height=1123');
-  if (!printWindow) {
-    alert("Popup blocked! Please allow popups for this site.");
-    return;
-  }
-  
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  
-  // Wait a bit longer for better rendering
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.onafterprint = () => printWindow.close();
-  }, 1000);
-};
+  // ================= DOWNLOAD INVOICE AS PDF =================
+  const handleDownloadInvoicePDF = (quote) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let yPos = 15;
+    
+    // Add watermark
+    doc.addImage(LOGO_PATH, 'PNG', pageWidth/2 - 50, pageHeight/2 - 50, 100, 100, undefined, 'NONE', 0.1);
+    
+    // Calculate GST for invoice
+    const totalAmount = quote.items.reduce((sum, item) => sum + item.amount, 0);
+    const cgst = totalAmount * 0.09;
+    const sgst = totalAmount * 0.09;
+    const grandTotal = totalAmount + cgst + sgst;
+    
+    // Add company header
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(companyInfo.name, pageWidth / 2, yPos, { align: "center" });
+    yPos += 7;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(companyInfo.description, pageWidth / 2, yPos, { align: "center" });
+    yPos += 5;
+    doc.text(`Phone: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
+    yPos += 5;
+    doc.text(companyInfo.address, pageWidth / 2, yPos, { align: "center" });
+    yPos += 5;
+    doc.text(`GSTIN: ${companyInfo.gstin}`, pageWidth / 2, yPos, { align: "center" });
+    yPos += 10;
+    
+    // Add title
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("TAX INVOICE", pageWidth / 2, yPos, { align: "center" });
+    yPos += 10;
+    
+    // Add line separator
+    doc.setLineWidth(0.5);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 10;
+    
+    // Customer details
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Bill To:", 14, yPos);
+    yPos += 7;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Name: ${quote.customerInfo.billTo}`, 14, yPos);
+    doc.text(`Invoice No: INV-${quote.id}`, pageWidth - 70, yPos);
+    yPos += 5;
+    
+    doc.text(`Contact: ${quote.customerInfo.contactNo}`, 14, yPos);
+    doc.text(`Invoice Date: ${new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
+    yPos += 5;
+    
+    doc.text(`State: ${quote.customerInfo.stateName || 'N/A'}`, 14, yPos);
+    doc.text(`Order No: ${quote.customerInfo.estimateNo || 'N/A'}`, pageWidth - 70, yPos);
+    yPos += 5;
+    
+    doc.text(`Order Date: ${quote.customerInfo.estimateDate || new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
+    yPos += 5;
+    
+    // Add customer GSTIN
+    doc.text(`Customer GSTIN: ${quote.customerInfo.customerGstin || 'N/A'}`, 14, yPos);
+    doc.text(`Branch: ${companyInfo.branch}`, pageWidth - 70, yPos);
+    yPos += 10;
+    
+    // Add line separator
+    doc.setLineWidth(0.5);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 5;
+    
+    // Items table header
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("S.No", 14, yPos);
+    doc.text("Description", 30, yPos);
+    doc.text("Qty", 140, yPos);
+    doc.text("Rate (₹)", 155, yPos);
+    doc.text("Amount (₹)", 180, yPos);
+    yPos += 7;
+    
+    // Add line under header
+    doc.setLineWidth(0.3);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 5;
+    
+    // Items
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    quote.items.forEach((item, index) => {
+      if (yPos > pageHeight - 50) {
+        doc.addPage();
+        yPos = 15;
+      }
+      
+      doc.text(`${index + 1}`, 14, yPos);
+      
+      const descriptionLines = doc.splitTextToSize(item.description, 100);
+      if (descriptionLines.length > 1) {
+        doc.text(descriptionLines[0], 30, yPos);
+        yPos += 5;
+        for (let i = 1; i < descriptionLines.length; i++) {
+          doc.text(descriptionLines[i], 30, yPos);
+          yPos += 5;
+        }
+        yPos -= 5 * (descriptionLines.length - 1);
+      } else {
+        doc.text(item.description, 30, yPos);
+      }
+      
+      doc.text(item.qty.toString(), 140, yPos);
+      doc.text(`₹${item.rate.toFixed(2)}`, 155, yPos);
+      doc.text(`₹${item.amount.toFixed(2)}`, 180, yPos);
+      yPos += 7;
+    });
+    
+    // Add line separator
+    yPos += 5;
+    doc.setLineWidth(0.5);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 10;
+    
+    // Totals with GST
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Sub Total:", pageWidth - 70, yPos);
+    doc.text(`₹${totalAmount.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+    yPos += 7;
+    
+    doc.text("CGST (9%):", pageWidth - 70, yPos);
+    doc.text(`₹${cgst.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+    yPos += 7;
+    
+    doc.text("SGST (9%):", pageWidth - 70, yPos);
+    doc.text(`₹${sgst.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+    yPos += 10;
+    
+    doc.setFontSize(12);
+    doc.text("GRAND TOTAL:", pageWidth - 70, yPos);
+    doc.text(`₹${grandTotal.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+    yPos += 15;
+    
+    // Bank details
+    if (yPos > pageHeight - 80) {
+      doc.addPage();
+      yPos = 15;
+    }
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Bank Details:", 14, yPos);
+    yPos += 7;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Account Holder: ${bankDetails.accountHolder}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Account Number: ${bankDetails.accountNumber}`, 14, yPos);
+    yPos += 5;
+    doc.text(`IFSC Code: ${bankDetails.ifsc}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Branch: ${bankDetails.branch}`, 14, yPos);
+    yPos += 5;
+    doc.text(`Bank: HDFC BANK`, 14, yPos);
+    yPos += 15;
+    
+    // Footer
+    doc.setFontSize(9);
+    doc.text("Thank you for your business!", pageWidth / 2, yPos, { align: "center" });
+    yPos += 5;
+    doc.text(`For any queries, please contact: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
+    
+    // Save the PDF
+    doc.save(`Invoice_${quote.customerInfo.estimateNo || quote.id}.pdf`);
+  };
 
-// UPDATED QUOTATION HTML WITH A4 SIZE OPTIMIZATION
-const generateQuotationHTML = (quote) => {
-  return `<!DOCTYPE html>
+  // ================= PRINT QUOTATION =================
+  const handlePrintQuotation = (quote) => {
+    const html = generateQuotationHTML(quote);
+    const printWindow = window.open('', '_blank', 'width=800,height=1123');
+    if (!printWindow) {
+      alert("Popup blocked! Please allow popups for this site.");
+      return;
+    }
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.onafterprint = () => printWindow.close();
+    }, 1000);
+  };
+
+  // ================= PRINT INVOICE =================
+  const handlePrintInvoice = (quote) => {
+    const html = generateInvoiceHTML(quote);
+    const printWindow = window.open('', '_blank', 'width=800,height=1123');
+    if (!printWindow) {
+      alert("Popup blocked! Please allow popups for this site.");
+      return;
+    }
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.onafterprint = () => printWindow.close();
+    }, 1000);
+  };
+
+  // GENERATE QUOTATION HTML
+  const generateQuotationHTML = (quote) => {
+    return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -390,80 +791,72 @@ const generateQuotationHTML = (quote) => {
       font-family: 'Arial', 'Segoe UI', sans-serif; 
       line-height: 1.6; 
       color: #222; 
-      background: linear-gradient(to right, #ffffff 0%, #ffffff 50%, #f5f5f5 50%, #f5f5f5 100%);
+      background: white;
       min-height: 100vh;
       position: relative;
     }
     
-    /* Watermark effect */
-    body::before {
-      content: '';
+    .watermark {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(245,245,245,0.9) 100%);
-      z-index: -1;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.08;
+      z-index: 1000;
+      pointer-events: none;
+      width: 400px;
+      height: auto;
     }
     
-    /* Shadow Font Classes */
+    .watermark img {
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+    }
+    
     .shadow-text {
       text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.15);
     }
     
     .heavy-shadow {
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2),
-                   3px 3px 6px rgba(0, 0, 0, 0.15);
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
     }
     
     .light-shadow {
       text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.1);
     }
     
-    /* Main Container */
     .quotation-container { 
-      max-width: 790px; /* Reduced from 850px for better fit */
+      max-width: 790px;
       margin: 0 auto; 
       border: 2px solid #333; 
-      padding: 25px; /* Reduced from 30px */
-      background: rgba(255, 255, 255, 0.92);
-      backdrop-filter: blur(2px);
+      padding: 25px;
+      background: rgba(255, 255, 255, 0.95);
       box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
       border-radius: 6px;
       position: relative;
       overflow: hidden;
-      min-height: auto; /* Remove min-height */
+      min-height: auto;
+      z-index: 1;
     }
     
-    /* Header Section - More compact */
     .company-header { 
       display: flex; 
       align-items: center; 
-      margin-bottom: 25px; /* Reduced from 35px */
-      padding-bottom: 15px; /* Reduced from 20px */
+      margin-bottom: 25px;
+      padding-bottom: 15px;
       border-bottom: 3px solid #2c3e50;
       position: relative;
     }
     
-    .company-header::after {
-      content: '';
-      position: absolute;
-      bottom: -2px;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, #3498db, transparent);
-    }
-    
     .logo-container { 
-      flex: 0 0 100px; /* Reduced from 140px */
-      margin-right: 20px; /* Reduced from 30px */
+      flex: 0 0 100px;
+      margin-right: 20px;
     }
     
     .logo { 
-      width: 100px; /* Reduced from 140px */
-      height: 100px; /* Reduced from 140px */
+      width: 100px;
+      height: 100px;
       object-fit: contain;
       border-radius: 8px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -476,76 +869,70 @@ const generateQuotationHTML = (quote) => {
     
     .company-details h2 { 
       color: #2c3e50; 
-      margin-bottom: 8px; /* Reduced from 12px */
-      font-size: 24px; /* Reduced from 32px */
+      margin-bottom: 8px;
+      font-size: 24px;
       font-weight: 800;
       letter-spacing: 0.5px;
     }
     
     .company-details p { 
-      margin-bottom: 4px; /* Reduced from 6px */
+      margin-bottom: 4px;
       color: #444; 
-      font-size: 13px; /* Reduced from 15px */
+      font-size: 13px;
     }
     
     .highlight { 
       color: #e74c3c; 
       font-weight: 700;
-      text-shadow: 1px 1px 2px rgba(231, 76, 60, 0.2);
     }
     
-    /* Quotation Title - More compact */
     .quotation-title { 
       text-align: center; 
-      margin: 20px 0; /* Reduced from 30px */
-      padding: 12px; /* Reduced from 18px */
+      margin: 20px 0;
+      padding: 12px;
       background: linear-gradient(135deg, #ffffffff 0%, #f1f4f8ff 100%);
       border-radius: 8px;
-      font-size: 26px; /* Reduced from 34px */
+      font-size: 26px;
       font-weight: 900; 
       color: #003366;
       text-transform: uppercase;
-      letter-spacing: 1px; /* Reduced from 2px */
-      text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.4),
-                   4px 4px 8px rgba(0, 0, 0, 0.3);
+      letter-spacing: 1px;
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
       position: relative;
       overflow: hidden;
       border: 2px solid #00336602;
     }
     
-    /* Details Section - More compact */
     .details-grid { 
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 20px; /* Reduced from 30px */
-      margin-bottom: 30px; /* Reduced from 40px */
+      gap: 20px;
+      margin-bottom: 30px;
     }
     
     .bill-to, .customer-details { 
-      padding: 18px; /* Reduced from 25px */
+      padding: 18px;
       background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
       border: none;
-      border-radius: 8px; /* Reduced from 10px */
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Reduced from 0 5px 15px */
-      border-left: 4px solid #3498db; /* Reduced from 5px */
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      border-left: 4px solid #3498db;
       position: relative;
     }
     
     .bill-to h4, .customer-details h4 { 
       color: #2c3e50; 
-      margin-bottom: 15px; /* Reduced from 20px */
-      padding-bottom: 8px; /* Reduced from 12px */
+      margin-bottom: 15px;
+      padding-bottom: 8px;
       border-bottom: 2px solid #3498db; 
-      font-size: 18px; /* Reduced from 20px */
+      font-size: 18px;
       font-weight: 700;
-      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
     }
     
     .detail-row {
       display: flex;
-      margin-bottom: 8px; /* Reduced from 12px */
-      padding: 6px 0; /* Reduced from 8px */
+      margin-bottom: 8px;
+      padding: 6px 0;
       border-bottom: 1px dashed #e0e0e0;
     }
     
@@ -554,61 +941,47 @@ const generateQuotationHTML = (quote) => {
     }
     
     .detail-label {
-      flex: 0 0 120px; /* Reduced from 140px */
+      flex: 0 0 120px;
       font-weight: 600;
       color: #495057;
-      text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.1);
-      font-size: 13px; /* Added */
+      font-size: 13px;
     }
     
     .detail-value {
       flex: 1;
       color: #2c3e50;
       font-weight: 500;
-      text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.1);
-      font-size: 13px; /* Added */
+      font-size: 13px;
     }
     
-    /* Items Table - More compact */
     .items-table { 
       width: 100%; 
-      border-collapse: collapse; /* Changed from separate */
-      margin: 25px 0; /* Reduced from 40px */
-      border-radius: 6px; /* Reduced from 10px */
+      border-collapse: collapse;
+      margin: 25px 0;
+      border-radius: 6px;
       overflow: hidden;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); /* Reduced from 0 8px 25px */
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     }
     
     .items-table th { 
       background: linear-gradient(135deg, #2c3e50 0%, #004aad 100%);
       color: white; 
-      padding: 12px 10px; /* Reduced from 18px 15px */
+      padding: 12px 10px;
       text-align: center; 
       font-weight: 700;
-      font-size: 13px; /* Reduced from 16px */
+      font-size: 13px;
       text-transform: uppercase;
-      letter-spacing: 0.5px; /* Reduced from 1px */
-      text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.3);
+      letter-spacing: 0.5px;
       border: none;
       position: relative;
     }
     
-    .items-table th::after {
-      content: '';
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 1px; /* Reduced from 2px */
-      background: linear-gradient(90deg, transparent, #3498db, transparent);
-    }
-    
     .items-table td { 
-      padding: 10px 8px; /* Reduced from 16px 15px */
+      padding: 10px 8px;
       border: 1px solid #e0e0e0; 
       text-align: center;
       background: white;
-      font-size: 13px; /* Added */
+      font-size: 13px;
     }
     
     .items-table tr:nth-child(even) td { 
@@ -616,9 +989,8 @@ const generateQuotationHTML = (quote) => {
     }
     
     .items-table td:first-child { 
-      width: 50px; /* Reduced from 70px */
+      width: 50px;
       font-weight: 600;
-      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     }
     
     .items-table td:nth-child(2) { 
@@ -626,95 +998,71 @@ const generateQuotationHTML = (quote) => {
       font-weight: 500;
     }
     
-    .items-table td:nth-child(4),
-    .items-table td:nth-child(5) { 
-      text-align: right; 
-      font-weight: 600;
-      color: #2c3e50;
-    }
-    
-    /* Totals Section - More compact */
     .totals-section { 
-      margin-top: 30px; /* Reduced from 45px */
-      padding-top: 15px; /* Reduced from 25px */
-      border-top: 2px solid #2c3e50; /* Reduced from 3px */
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 2px solid #2c3e50;
       position: relative;
-    }
-    
-    .totals-section::before {
-      content: '';
-      position: absolute;
-      top: -1px;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, #3498db, transparent);
     }
     
     .total-row { 
       display: flex; 
       justify-content: flex-end; 
-      margin-bottom: 10px; /* Reduced from 15px */
-      padding: 8px 0; /* Reduced from 12px */
+      margin-bottom: 10px;
+      padding: 8px 0;
     }
     
     .total-label { 
-      width: 180px; /* Reduced from 200px */
+      width: 180px;
       font-weight: 700; 
       color: #495057;
-      font-size: 16px; /* Reduced from 18px */
-      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+      font-size: 16px;
     }
     
     .total-value { 
-      width: 180px; /* Reduced from 200px */
+      width: 180px;
       text-align: right; 
       font-weight: 800; 
-      font-size: 18px; /* Reduced from 20px */
+      font-size: 18px;
       color: #2c3e50;
-      text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
     }
     
     .grand-total {
       background: linear-gradient(135deg, #f8f9fa 0%, #e3f2fd 100%);
-      padding: 15px; /* Reduced from 20px */
-      border-radius: 8px; /* Reduced from 10px */
-      margin-top: 15px; /* Reduced from 20px */
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
       border: 2px solid #3498db;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
     
     .grand-total .total-value {
-      font-size: 22px; /* Reduced from 28px */
+      font-size: 22px;
       color: #e74c3c;
-      text-shadow: 2px 2px 4px rgba(231, 76, 60, 0.3);
     }
     
-    /* Bank Details Section - Professional & Simple (Single Column) */
     .bank-details {
-      margin-top: 35px; /* Reduced from 50px */
-      padding: 20px; /* Reduced from 30px */
+      margin-top: 35px;
+      padding: 20px;
       background: white;
       border: 1px solid #ddd;
-      border-radius: 6px; /* Simple border radius */
+      border-radius: 6px;
       border-left: 4px solid #2c3e50;
       position: relative;
     }
     
     .bank-details h4 {
       color: #2c3e50;
-      margin-bottom: 15px; /* Reduced from 25px */
-      padding-bottom: 8px; /* Reduced from 15px */
+      margin-bottom: 15px;
+      padding-bottom: 8px;
       border-bottom: 1px solid #3498db;
-      font-size: 16px; /* Reduced from 22px */
+      font-size: 16px;
       font-weight: 600;
-      text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.1);
     }
     
     .bank-info-single-column {
       display: flex;
       flex-direction: column;
-      gap: 8px; /* Reduced from 20px */
+      gap: 8px;
     }
     
     .bank-row {
@@ -742,42 +1090,34 @@ const generateQuotationHTML = (quote) => {
       font-size: 13px;
     }
     
-    /* Footer - More compact */
     .footer-note {
-      margin-top: 30px; /* Reduced from 40px */
-      padding: 18px; /* Reduced from 25px */
+      margin-top: 30px;
+      padding: 18px;
       background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-      border-radius: 8px; /* Reduced from 10px */
+      border-radius: 8px;
       text-align: center;
       border-top: 2px solid #3498db;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
     }
     
     .footer-note p {
       color: #666;
-      font-size: 13px; /* Reduced from 15px */
-      margin-bottom: 8px; /* Reduced from 10px */
-      text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.1);
+      font-size: 13px;
+      margin-bottom: 8px;
     }
     
-    /* SINGLE PAGE PRINT OPTIMIZATION */
     @media print { 
       body { 
         padding: 0 !important; 
         margin: 0 !important;
-        background: white !important; /* Simplify background for print */
+        background: white !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
-        width: 100% !important;
-        height: auto !important;
-        min-height: 100vh !important;
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
       } 
       
-      /* Remove gradient background in print for better compression */
-      body::before {
-        display: none !important;
+      .watermark {
+        opacity: 0.08 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
       
       .quotation-container { 
@@ -785,205 +1125,24 @@ const generateQuotationHTML = (quote) => {
         padding: 15px !important; 
         background: white !important;
         box-shadow: none !important;
-        margin: 0 auto !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        border-radius: 0 !important;
-        min-height: auto !important;
-        height: auto !important;
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
-        overflow: visible !important;
       }
       
-      /* Force single page */
-      html, body {
-        height: auto !important;
-        overflow: visible !important;
-      }
-      
-      /* Disable page breaks */
-      .quotation-container,
-      .company-header,
-      .details-grid,
-      .items-table,
-      .totals-section,
-      .bank-details,
-      .footer-note {
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
-        page-break-after: avoid !important;
-        break-after: avoid !important;
-        page-break-before: avoid !important;
-        break-before: avoid !important;
-      }
-      
-      /* Compact all elements for print */
-      .company-header {
-        margin-bottom: 15px !important;
-        padding-bottom: 10px !important;
-      }
-      
-      .logo-container {
-        flex: 0 0 80px !important;
-        margin-right: 15px !important;
-      }
-      
-      .logo {
-        width: 80px !important;
-        height: 80px !important;
-      }
-      
-      .company-details h2 {
-        font-size: 20px !important;
-        margin-bottom: 5px !important;
-      }
-      
-      .company-details p {
-        font-size: 11px !important;
-        margin-bottom: 3px !important;
-      }
-      
-      .quotation-title {
-        margin: 15px 0 !important;
-        padding: 8px !important;
-        font-size: 20px !important;
-        letter-spacing: 0.5px !important;
-      }
-      
-      .details-grid {
-        gap: 10px !important;
-        margin-bottom: 20px !important;
-      }
-      
-      .bill-to, .customer-details {
-        padding: 12px !important;
-      }
-      
-      .bill-to h4, .customer-details h4 {
-        font-size: 14px !important;
-        margin-bottom: 10px !important;
-        padding-bottom: 5px !important;
-      }
-      
-      .detail-row {
-        margin-bottom: 5px !important;
-        padding: 4px 0 !important;
-      }
-      
-      .detail-label {
-        flex: 0 0 100px !important;
-        font-size: 11px !important;
-      }
-      
-      .detail-value {
-        font-size: 11px !important;
-      }
-      
-      .items-table {
-        margin: 15px 0 !important;
-      }
-      
-      .items-table th {
-        padding: 8px 6px !important;
-        font-size: 11px !important;
-      }
-      
-      .items-table td {
-        padding: 6px 4px !important;
-        font-size: 11px !important;
-      }
-      
-      .totals-section {
-        margin-top: 20px !important;
-        padding-top: 10px !important;
-      }
-      
-      .total-label {
-        width: 150px !important;
-        font-size: 14px !important;
-      }
-      
-      .total-value {
-        width: 150px !important;
-        font-size: 15px !important;
-      }
-      
-      .grand-total {
-        padding: 10px !important;
-        margin-top: 10px !important;
-      }
-      
-      .grand-total .total-value {
-        font-size: 18px !important;
-      }
-      
-      .bank-details {
-        margin-top: 25px !important;
-        padding: 15px !important;
-        border: 1px solid #ccc !important;
-        border-left: 3px solid #2c3e50 !important;
-      }
-      
-      .bank-details h4 {
-        font-size: 14px !important;
-        margin-bottom: 12px !important;
-        padding-bottom: 6px !important;
-      }
-      
-      .bank-info-single-column {
-        gap: 6px !important;
-      }
-      
-      .bank-row {
-        padding: 4px 0 !important;
-      }
-      
-      .bank-label {
-        flex: 0 0 140px !important;
-        font-size: 11px !important;
-      }
-      
-      .bank-value {
-        font-size: 11px !important;
-      }
-      
-      .footer-note {
-        margin-top: 20px !important;
-        padding: 12px !important;
-      }
-      
-      .footer-note p {
-        font-size: 11px !important;
-        margin-bottom: 5px !important;
-      }
-      
-      /* Set page size and prevent page breaks */
       @page {
         size: A4 portrait !important;
-        margin: 0.5cm !important; /* Reduced from 0.8cm */
-        padding: 0 !important;
-      }
-      
-      /* Ensure everything fits on one page */
-      * {
-        max-height: none !important;
-        overflow: visible !important;
-      }
-      
-      /* Remove any forced page breaks */
-      .page-break {
-        display: none !important;
+        margin: 0.5cm !important;
       }
     }
   </style>
 </head>
 <body>
+  <div class="watermark">
+    <img src="${LOGO_PATH}" alt="Watermark">
+  </div>
   <div class="quotation-container">
     <!-- Header with Logo -->
     <div class="company-header">
       <div class="logo-container">
-        <img src="${LOGO_PATH}" alt="Company Logo" class="logo" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMTQwIj48cmVjdCB3aWR0aD0iMTQwIiBoZWlnaHQ9IjE0MCIgZmlsbD0iIzJjM2U1MCIgcng9IjgiLz48dGV4dCB4PSI3MCIgeT0iNTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IndoaXRlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSJib2xkIj5TUkkgUkFKQTwvdGV4dD48dGV4dCB4PSI3MCIgeT0iNzAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNlY2YwZjEiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxMiI+Tk9ZIFNFUlZJQ0VTPC90ZXh0Pjwvc3ZnPg=='">
+        <img src="${LOGO_PATH}" alt="Company Logo" class="logo" onerror="this.style.display='none'">
       </div>
       <div class="company-details">
         <h2 class="heavy-shadow">${companyInfo.name}</h2>
@@ -1018,6 +1177,10 @@ const generateQuotationHTML = (quote) => {
       <div class="customer-details">
         <h4 class="shadow-text">Quotation Details</h4>
         <div class="detail-row">
+          <div class="detail-label light-shadow">Quotation No:</div>
+          <div class="detail-value shadow-text">Q-${quote.id}</div>
+        </div>
+        <div class="detail-row">
           <div class="detail-label light-shadow">Estimate No:</div>
           <div class="detail-value shadow-text">${quote.customerInfo.estimateNo || 'N/A'}</div>
         </div>
@@ -1028,10 +1191,6 @@ const generateQuotationHTML = (quote) => {
         <div class="detail-row">
           <div class="detail-label light-shadow">Branch:</div>
           <div class="detail-value shadow-text">${companyInfo.branch || 'Edayarpalayam'}</div>
-        </div>
-        <div class="detail-row">
-          <div class="detail-label light-shadow">GSTIN:</div>
-          <div class="detail-value shadow-text">${companyInfo.gstin || '33BECPR927M1ZU'}</div>
         </div>
       </div>
     </div>
@@ -1061,13 +1220,13 @@ const generateQuotationHTML = (quote) => {
     
     <!-- Totals Section -->
     <div class="totals-section">
-      <div class="total-row">
+      <div class="total-row grand-total">
         <div class="total-label shadow-text">TOTAL AMOUNT:</div>
-        <div class="total-value shadow-text">₹${quote.totals.totalAmount.toFixed(2)}</div>
+        <div class="total-value shadow-text">₹${(quote.totals?.grandTotal || totalAmount).toFixed(2)}</div>
       </div>
     </div>
     
-    <!-- Bank Details Section - Professional Single Column -->
+    <!-- Bank Details Section -->
     <div class="bank-details">
       <h4 class="shadow-text">Bank Details</h4>
       <div class="bank-info-single-column">
@@ -1100,7 +1259,7 @@ const generateQuotationHTML = (quote) => {
     
     <!-- Footer Note -->
     <div class="footer-note">
-      <p class="light-shadow">This is a computer generated quotation. Valid for 30 days from date of issue.</p>
+      <p class="light-shadow">Thank you for your business!</p>
       <p class="light-shadow">For any queries, please contact: ${companyInfo.phone}</p>
       <p class="light-shadow">Email: ${companyInfo.email || 'info@netlonservices.com'}</p>
     </div>
@@ -1108,21 +1267,566 @@ const generateQuotationHTML = (quote) => {
 </body>
 </html>`;
   };
+
+  // GENERATE INVOICE HTML
+  const generateInvoiceHTML = (quote) => {
+    const totalAmount = quote.items.reduce((sum, item) => sum + item.amount, 0);
+    const cgst = totalAmount * 0.09;
+    const sgst = totalAmount * 0.09;
+    const grandTotal = totalAmount + cgst + sgst;
+    
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Invoice ${quote.customerInfo.estimateNo || quote.id}</title>
+  <style>
+    * { 
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box; 
+    }
+    
+    body { 
+      font-family: 'Arial', 'Segoe UI', sans-serif; 
+      line-height: 1.6; 
+      color: #222; 
+      background: white;
+      min-height: 100vh;
+      position: relative;
+    }
+    
+    .watermark {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.08;
+      z-index: 1000;
+      pointer-events: none;
+      width: 400px;
+      height: auto;
+    }
+    
+    .watermark img {
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+    }
+    
+    .shadow-text {
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.15);
+    }
+    
+    .heavy-shadow {
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    .light-shadow {
+      text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .invoice-container { 
+      max-width: 790px;
+      margin: 0 auto; 
+      border: 2px solid #333; 
+      padding: 25px;
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      min-height: auto;
+      z-index: 1;
+    }
+    
+    .company-header { 
+      display: flex; 
+      align-items: center; 
+      margin-bottom: 25px;
+      padding-bottom: 15px;
+      border-bottom: 3px solid #2c3e50;
+      position: relative;
+    }
+    
+    .logo-container { 
+      flex: 0 0 100px;
+      margin-right: 20px;
+    }
+    
+    .logo { 
+      width: 100px;
+      height: 100px;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      border: 2px solid #e0e0e0;
+    }
+    
+    .company-details { 
+      flex: 1; 
+    }
+    
+    .company-details h2 { 
+      color: #2c3e50; 
+      margin-bottom: 8px;
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    
+    .company-details p { 
+      margin-bottom: 4px;
+      color: #444; 
+      font-size: 13px;
+    }
+    
+    .highlight { 
+      color: #e74c3c; 
+      font-weight: 700;
+    }
+    
+    .invoice-title { 
+      text-align: center; 
+      margin: 20px 0;
+      padding: 12px;
+      background: linear-gradient(135deg, #ffffffff 0%, #f1f4f8ff 100%);
+      border-radius: 8px;
+      font-size: 26px;
+      font-weight: 900; 
+      color: #dc3545;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+      position: relative;
+      overflow: hidden;
+      border: 2px solid #dc354502;
+    }
+    
+    .details-grid { 
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .bill-to, .invoice-details { 
+      padding: 18px;
+      background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+      border: none;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      border-left: 4px solid #dc3545;
+      position: relative;
+    }
+    
+    .bill-to h4, .invoice-details h4 { 
+      color: #2c3e50; 
+      margin-bottom: 15px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #dc3545; 
+      font-size: 18px;
+      font-weight: 700;
+    }
+    
+    .detail-row {
+      display: flex;
+      margin-bottom: 8px;
+      padding: 6px 0;
+      border-bottom: 1px dashed #e0e0e0;
+    }
+    
+    .detail-row:last-child {
+      border-bottom: none;
+    }
+    
+    .detail-label {
+      flex: 0 0 120px;
+      font-weight: 600;
+      color: #495057;
+      font-size: 13px;
+    }
+    
+    .detail-value {
+      flex: 1;
+      color: #2c3e50;
+      font-weight: 500;
+      font-size: 13px;
+    }
+    
+    .items-table { 
+      width: 100%; 
+      border-collapse: collapse;
+      margin: 25px 0;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .items-table th { 
+      background: linear-gradient(135deg, #2c3e50 0%, #dc3545 100%);
+      color: white; 
+      padding: 12px 10px;
+      text-align: center; 
+      font-weight: 700;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: none;
+      position: relative;
+    }
+    
+    .items-table td { 
+      padding: 10px 8px;
+      border: 1px solid #e0e0e0; 
+      text-align: center;
+      background: white;
+      font-size: 13px;
+    }
+    
+    .items-table tr:nth-child(even) td { 
+      background: linear-gradient(135deg, #f8f9fa 0%, #f0f0f0 100%);
+    }
+    
+    .items-table td:first-child { 
+      width: 50px;
+      font-weight: 600;
+    }
+    
+    .items-table td:nth-child(2) { 
+      text-align: left; 
+      font-weight: 500;
+    }
+    
+    .totals-section { 
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 2px solid #2c3e50;
+      position: relative;
+    }
+    
+    .total-row { 
+      display: flex; 
+      justify-content: flex-end; 
+      margin-bottom: 10px;
+      padding: 8px 0;
+    }
+    
+    .total-label { 
+      width: 180px;
+      font-weight: 700; 
+      color: #495057;
+      font-size: 16px;
+    }
+    
+    .total-value { 
+      width: 180px;
+      text-align: right; 
+      font-weight: 800; 
+      font-size: 18px;
+      color: #2c3e50;
+    }
+    
+    .grand-total {
+      background: linear-gradient(135deg, #f8f9fa 0%, #ffe6e6 100%);
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      border: 2px solid #dc3545;
+    }
+    
+    .grand-total .total-value {
+      font-size: 22px;
+      color: #dc3545;
+    }
+    
+    .bank-details {
+      margin-top: 35px;
+      padding: 20px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      border-left: 4px solid #dc3545;
+      position: relative;
+    }
+    
+    .bank-details h4 {
+      color: #2c3e50;
+      margin-bottom: 15px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #dc3545;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    
+    .bank-info-single-column {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .bank-row {
+      display: flex;
+      padding: 6px 0;
+      border-bottom: 1px dashed #eee;
+    }
+    
+    .bank-row:last-child {
+      border-bottom: none;
+    }
+    
+    .bank-label {
+      flex: 0 0 160px;
+      font-weight: 500;
+      color: #495057;
+      font-size: 13px;
+      text-transform: capitalize;
+    }
+    
+    .bank-value {
+      flex: 1;
+      color: #2c3e50;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    
+    .footer-note {
+      margin-top: 30px;
+      padding: 18px;
+      background: linear-gradient(135deg, #f8f9fa 0%, #ffe6e6 100%);
+      border-radius: 8px;
+      text-align: center;
+      border-top: 2px solid #dc3545;
+    }
+    
+    .footer-note p {
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    
+    @media print { 
+      body { 
+        padding: 0 !important; 
+        margin: 0 !important;
+        background: white !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      } 
+      
+      .watermark {
+        opacity: 0.08 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      
+      .invoice-container { 
+        border: 1px solid #000 !important; 
+        padding: 15px !important; 
+        background: white !important;
+        box-shadow: none !important;
+      }
+      
+      @page {
+        size: A4 portrait !important;
+        margin: 0.5cm !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="watermark">
+    <img src="${LOGO_PATH}" alt="Watermark">
+  </div>
+  <div class="invoice-container">
+    <!-- Header with Logo -->
+    <div class="company-header">
+      <div class="logo-container">
+        <img src="${LOGO_PATH}" alt="Company Logo" class="logo" onerror="this.style.display='none'">
+      </div>
+      <div class="company-details">
+        <h2 class="heavy-shadow">${companyInfo.name}</h2>
+        <p class="light-shadow">${companyInfo.description}</p>
+        <p class="light-shadow"><span class="highlight heavy-shadow">${companyInfo.phone}</span></p>
+        <p class="light-shadow">${companyInfo.address}</p>
+        <p class="light-shadow"><strong>GST IN:</strong> ${companyInfo.gstin}</p>
+      </div>
+    </div>
+    
+    <!-- Invoice Title -->
+    <div class="invoice-title heavy-shadow">TAX INVOICE</div>
+    
+    <!-- Customer Details Grid -->
+    <div class="details-grid">
+      <div class="bill-to">
+        <h4 class="shadow-text">Bill To</h4>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">Customer Name:</div>
+          <div class="detail-value shadow-text">${quote.customerInfo.billTo || 'N/A'}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">Contact No:</div>
+          <div class="detail-value shadow-text">${quote.customerInfo.contactNo || 'N/A'}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">State Name:</div>
+          <div class="detail-value shadow-text">${quote.customerInfo.stateName || 'Tamil Nadu'}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">Customer GSTIN:</div>
+          <div class="detail-value shadow-text">${quote.customerInfo.customerGstin || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div class="invoice-details">
+        <h4 class="shadow-text">Invoice Details</h4>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">Invoice No:</div>
+          <div class="detail-value shadow-text">INV-${quote.id}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">Invoice Date:</div>
+          <div class="detail-value shadow-text">${new Date().toLocaleDateString()}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">Estimate No:</div>
+          <div class="detail-value shadow-text">${quote.customerInfo.estimateNo || 'N/A'}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">Estimate Date:</div>
+          <div class="detail-value shadow-text">${quote.customerInfo.estimateDate || new Date().toLocaleDateString()}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label light-shadow">Branch:</div>
+          <div class="detail-value shadow-text">${companyInfo.branch || 'Edayarpalayam'}</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Items Table -->
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th class="heavy-shadow">Si.No</th>
+          <th class="heavy-shadow">Description</th>
+          <th class="heavy-shadow">Qty</th>
+          <th class="heavy-shadow">Rate (₹)</th>
+          <th class="heavy-shadow">Amount (₹)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${quote.items.map((item, index) => `
+          <tr>
+            <td class="shadow-text">${index + 1}</td>
+            <td class="shadow-text" style="text-align: left;">${item.description}</td>
+            <td class="shadow-text">${item.qty}</td>
+            <td class="shadow-text">₹${(item.rate || 0).toFixed(2)}</td>
+            <td class="shadow-text">₹${item.amount.toFixed(2)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    
+    <!-- Totals Section -->
+    <div class="totals-section">
+      <div class="total-row">
+        <div class="total-label shadow-text">SUB TOTAL:</div>
+        <div class="total-value shadow-text">₹${totalAmount.toFixed(2)}</div>
+      </div>
+      <div class="total-row">
+        <div class="total-label shadow-text">CGST (9%):</div>
+        <div class="total-value shadow-text">₹${cgst.toFixed(2)}</div>
+      </div>
+      <div class="total-row">
+        <div class="total-label shadow-text">SGST (9%):</div>
+        <div class="total-value shadow-text">₹${sgst.toFixed(2)}</div>
+      </div>
+      <div class="total-row grand-total">
+        <div class="total-label shadow-text">GRAND TOTAL:</div>
+        <div class="total-value shadow-text">₹${grandTotal.toFixed(2)}</div>
+      </div>
+    </div>
+    
+    <!-- Bank Details Section -->
+    <div class="bank-details">
+      <h4 class="shadow-text">Bank Details</h4>
+      <div class="bank-info-single-column">
+        <div class="bank-row">
+          <span class="bank-label light-shadow">Account Holder:</span>
+          <span class="bank-value shadow-text">${bankDetails.accountHolder}</span>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label light-shadow">Account Number:</span>
+          <span class="bank-value shadow-text">${bankDetails.accountNumber}</span>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label light-shadow">IFSC Code:</span>
+          <span class="bank-value shadow-text">${bankDetails.ifsc}</span>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label light-shadow">Branch:</span>
+          <span class="bank-value shadow-text">${bankDetails.branch}</span>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label light-shadow">Account Type:</span>
+          <span class="bank-value shadow-text">${bankDetails.accountType}</span>
+        </div>
+        <div class="bank-row">
+          <span class="bank-label light-shadow">Bank Name:</span>
+          <span class="bank-value shadow-text">HDFC BANK</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Footer Note -->
+    <div class="footer-note">
+      <p class="light-shadow">Thank you for your business!</p>
+      <p class="light-shadow">For any queries, please contact: ${companyInfo.phone}</p>
+      <p class="light-shadow">Email: ${companyInfo.email || 'info@netlonservices.com'}</p>
+    </div>
+  </div>
+</body>
+</html>`;
+  };
+
   // ================= WHATSAPP =================
   const sendWhatsApp = (quote) => {
-    const msg = `Quotation ${quote.customerInfo.estimateNo || quote.id}
-Customer: ${quote.customerInfo.billTo}
-Total Amount: ₹${quote.totals.totalAmount.toFixed(2)}
-Date: ${quote.quotationDate}
-Thank you for your business!`;
+    if (!quote.customerInfo.contactNo) {
+      alert("No contact number available for this customer.");
+      return;
+    }
     
-    window.open(`https://wa.me/91${quote.customerInfo.contactNo}?text=${encodeURIComponent(msg)}`, '_blank');
+    const phoneNumber = quote.customerInfo.contactNo.replace(/[\s+\-()]/g, '');
+    
+    const message = `Dear ${quote.customerInfo.billTo || 'Customer'},
+
+*Quotation Details:*
+Quotation No: Q-${quote.id}
+Estimate No: ${quote.customerInfo.estimateNo || 'N/A'}
+Date: ${quote.customerInfo.estimateDate || new Date().toLocaleDateString()}
+Customer GSTIN: ${quote.customerInfo.customerGstin || 'N/A'}
+
+*Items:*
+${quote.items.map((item, i) => `${i+1}. ${item.description} - Qty: ${item.qty} - Rate: ₹${item.rate.toFixed(2)}`).join('\n')}
+
+*Amount Summary:*
+Total Amount: ₹${quote.totals.grandTotal.toFixed(2)}
+
+Thank you for your business!
+
+Best regards,
+${companyInfo.name}
+${companyInfo.phone}
+GSTIN: ${companyInfo.gstin}`;
+    
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   // ================= USE EFFECT =================
   useEffect(() => {
     fetchQuotations();
     fetchCompanyInfo();
+    fetchInventory();
   }, []);
 
   // ================= RENDER =================
@@ -1181,12 +1885,8 @@ Thank you for your business!`;
               />
             </div>
             <div>
-              <h3 style={{ color: "white", margin: 0, fontSize: "1.8rem", fontWeight: "bold" }}>
-                <QuoteIcon size={28} className="me-2" style={{ verticalAlign: "middle" }} />
-                Quotation
-              </h3>
               <p style={{ color: "rgba(255,255,255,0.9)", margin: "8px 0 0 0", fontSize: "1rem" }}>
-                {companyInfo.name} | {companyInfo.phone}
+                {companyInfo.name} | {companyInfo.phone} | GSTIN: {companyInfo.gstin}
               </p>
             </div>
           </div>
@@ -1465,9 +2165,10 @@ Thank you for your business!`;
                   <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600" }}>Quotation No</th>
                   <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600" }}>Customer</th>
                   <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600" }}>Contact</th>
+                  <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600" }}>Customer GSTIN</th>
                   <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600" }}>Estimate No</th>
                   <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600" }}>Total Amount</th>
-                  <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600", width: "280px" }}>Actions</th>
+                  <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600", width: "320px" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1494,6 +2195,9 @@ Thank you for your business!`;
                       {quote.customerInfo.contactNo}
                     </td>
                     <td style={{ padding: "12px 15px", color: "#6c757d", fontWeight: "500" }}>
+                      {quote.customerInfo.customerGstin || "N/A"}
+                    </td>
+                    <td style={{ padding: "12px 15px", color: "#6c757d", fontWeight: "500" }}>
                       {quote.customerInfo.estimateNo || "N/A"}
                       {quote.customerInfo.estimateDate && (
                         <div style={{ color: "#6c757d", fontSize: "0.8rem", marginTop: "2px" }}>
@@ -1503,7 +2207,7 @@ Thank you for your business!`;
                     </td>
                     <td style={{ padding: "12px 15px" }}>
                       <strong style={{ color: "#28a745", fontSize: "1.1rem", fontWeight: "600" }}>
-                        ₹{quote.totals.totalAmount.toFixed(2)}
+                        ₹{quote.totals.grandTotal.toFixed(2)}
                       </strong>
                     </td>
                     <td style={{ padding: "12px 15px" }}>
@@ -1525,11 +2229,30 @@ Thank you for your business!`;
                           <Eye size={16} />
                           <span style={{ fontSize: "0.8rem" }}>View</span>
                         </Button>
+                        
+                        <Button 
+                          size="sm" 
+                          variant="outline-success" 
+                          onClick={() => sendWhatsApp(quote)}
+                          title="Send WhatsApp"
+                          style={{ 
+                            padding: "4px 8px", 
+                            borderRadius: "4px", 
+                            borderWidth: "1px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px"
+                          }}
+                        >
+                          <MessageCircle size={16} />
+                          <span style={{ fontSize: "0.8rem" }}>WhatsApp</span>
+                        </Button>
+                        
                         <Button 
                           size="sm" 
                           variant="outline-primary" 
-                          onClick={() => handlePrint(quote)}
-                          title="Print"
+                          onClick={() => handlePrintQuotation(quote)}
+                          title="Print Quotation"
                           style={{ 
                             padding: "4px 8px", 
                             borderRadius: "4px", 
@@ -1540,7 +2263,25 @@ Thank you for your business!`;
                           }}
                         >
                           <Printer size={16} />
-                          <span style={{ fontSize: "0.8rem" }}>Print</span>
+                          <span style={{ fontSize: "0.8rem" }}>Print Q</span>
+                        </Button>
+                        
+                        <Button 
+                          size="sm" 
+                          variant="outline-warning" 
+                          onClick={() => handlePrintInvoice(quote)}
+                          title="Print Invoice"
+                          style={{ 
+                            padding: "4px 8px", 
+                            borderRadius: "4px", 
+                            borderWidth: "1px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px"
+                          }}
+                        >
+                          <Printer size={16} />
+                          <span style={{ fontSize: "0.8rem" }}>Print INV</span>
                         </Button>
                         
                         <Button 
@@ -1721,6 +2462,10 @@ Thank you for your business!`;
                       <strong style={{ color: "#6c757d", fontSize: "0.9rem" }}>State Name:</strong>
                       <div style={{ color: "#495057", marginTop: "4px" }}>{selectedQuotation.customerInfo.stateName || "N/A"}</div>
                     </div>
+                    <div style={{ marginBottom: "10px" }}>
+                      <strong style={{ color: "#6c757d", fontSize: "0.9rem" }}>Customer GSTIN:</strong>
+                      <div style={{ color: "#495057", marginTop: "4px" }}>{selectedQuotation.customerInfo.customerGstin || "N/A"}</div>
+                    </div>
                   </Col>
                   <Col md={6}>
                     <div style={{ marginBottom: "10px" }}>
@@ -1798,12 +2543,11 @@ Thank you for your business!`;
                       padding: "12px 15px", 
                       backgroundColor: "white", 
                       borderRadius: "6px",
-                      marginTop: "10px"
+                      marginTop: "10px",
+                      border: "2px solid #007bff"
                     }}>
-                      <h6 style={{ color: "#2c3e50", margin: 0, fontWeight: "700", fontSize: "1.1rem" }}>Total Amount:</h6>
-                      <h5 style={{ color: '#007bff', margin: 0, fontWeight: "700", fontSize: "1.2rem" }}>
-                        ₹{selectedQuotation.totals.totalAmount.toFixed(2)}
-                      </h5>
+                      <h5 style={{ color: "#007bff", margin: 0, fontWeight: "700", fontSize: "1.2rem" }}>Total Amount:</h5>
+                      <h5 style={{ color: '#007bff', margin: 0, fontWeight: "700", fontSize: "1.2rem" }}>₹{selectedQuotation.totals.grandTotal.toFixed(2)}</h5>
                     </div>
                   </Col>
                 </Row>
@@ -1826,8 +2570,23 @@ Thank you for your business!`;
           {selectedQuotation && (
             <>
               <Button 
+                variant="success" 
+                onClick={() => sendWhatsApp(selectedQuotation)}
+                style={{ 
+                  padding: "6px 16px", 
+                  borderRadius: "6px", 
+                  fontWeight: "500",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+              >
+                <MessageCircle size={16} />
+                WhatsApp
+              </Button>
+              <Button 
                 variant="primary" 
-                onClick={() => handlePrint(selectedQuotation)}
+                onClick={() => handlePrintQuotation(selectedQuotation)}
                 style={{ 
                   padding: "6px 16px", 
                   borderRadius: "6px", 
@@ -1838,11 +2597,11 @@ Thank you for your business!`;
                 }}
               >
                 <Printer size={16} />
-                Print
+                Print Q
               </Button>
               <Button 
-                variant="success" 
-                onClick={() => handleDownload(selectedQuotation)}
+                variant="warning" 
+                onClick={() => handlePrintInvoice(selectedQuotation)}
                 style={{ 
                   padding: "6px 16px", 
                   borderRadius: "6px", 
@@ -1852,8 +2611,8 @@ Thank you for your business!`;
                   gap: "6px"
                 }}
               >
-                <Download size={16} />
-                Download
+                <Printer size={16} />
+                Print INV
               </Button>
             </>
           )}
@@ -1974,6 +2733,20 @@ Thank you for your business!`;
                     />
                   </Form.Group>
                 </Col>
+                <Col md={6}>
+                  <Form.Group className="mb-3">
+                    <Form.Label style={{ fontSize: "0.9rem", fontWeight: "500", color: "#495057", marginBottom: "5px" }}>Customer GSTIN</Form.Label>
+                    <Form.Control
+                      type="text"
+                      name="customerGstin"
+                      value={customerInfo.customerGstin}
+                      onChange={handleCustomerChange}
+                      placeholder="Enter customer GSTIN"
+                      size="sm"
+                      style={{ padding: "8px 12px", borderRadius: "6px" }}
+                    />
+                  </Form.Group>
+                </Col>
               </Row>
 
               <Row>
@@ -2073,15 +2846,71 @@ Thank you for your business!`;
                         <td style={{ padding: "10px 12px", textAlign: "center", color: "#6c757d", fontWeight: "500", verticalAlign: "middle" }}>
                           {i + 1}
                         </td>
-                        <td style={{ padding: "10px 12px", verticalAlign: "middle" }}>
+                        <td style={{ padding: "10px 12px", verticalAlign: "middle", position: "relative" }}>
                           <Form.Control
                             value={item.description}
-                            onChange={(e) => handleItemChange(i, "description", e.target.value)}
+                            onChange={(e) => handleDescriptionSearch(i, e.target.value)}
+                            onFocus={() => {
+                              if (searchTerms[i]?.length >= 2) {
+                                setShowSuggestions({ ...showSuggestions, [i]: true });
+                              }
+                            }}
+                            onBlur={() => {
+                              setTimeout(() => {
+                                setShowSuggestions({ ...showSuggestions, [i]: false });
+                              }, 200);
+                            }}
                             size="sm"
-                            placeholder="Enter item description"
+                            placeholder="Type to search from inventory or enter new"
                             style={{ padding: "8px 10px", borderRadius: "6px" }}
                             required
                           />
+                          {showSuggestions[i] && (
+                            <div style={{
+                              position: "absolute",
+                              top: "100%",
+                              left: "12px",
+                              right: "12px",
+                              backgroundColor: "white",
+                              border: "1px solid #ddd",
+                              borderRadius: "4px",
+                              maxHeight: "200px",
+                              overflowY: "auto",
+                              zIndex: 1000,
+                              boxShadow: "0 4px 8px rgba(0,0,0,0.1)"
+                            }}>
+                              {inventoryItems
+                                .filter(inv => 
+                                  inv.description.toLowerCase().includes(searchTerms[i]?.toLowerCase() || "")
+                                )
+                                .map(inv => (
+                                  <div
+                                    key={inv.id}
+                                    style={{
+                                      padding: "8px 12px",
+                                      cursor: "pointer",
+                                      borderBottom: "1px solid #eee",
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center"
+                                    }}
+                                    onMouseDown={() => handleSelectInventoryItem(i, inv)}
+                                  >
+                                    <span>{inv.description}</span>
+                                    <span style={{ color: "#28a745", fontWeight: "600" }}>
+                                      ₹{inv.rate.toFixed(2)}
+                                    </span>
+                                  </div>
+                                ))}
+                              {inventoryItems.filter(inv => 
+                                inv.description.toLowerCase().includes(searchTerms[i]?.toLowerCase() || "")
+                              ).length === 0 && (
+                                <div style={{ padding: "8px 12px", color: "#6c757d", fontStyle: "italic" }}>
+                                  No matching items found. You can enter new description.
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: "10px 12px", verticalAlign: "middle" }}>
                           <Form.Control
@@ -2172,14 +3001,14 @@ Thank you for your business!`;
                   <div style={{ 
                     display: "flex", 
                     justifyContent: "space-between", 
-                    padding: "12px 0", 
-                    backgroundColor: "white", 
-                    borderRadius: "6px", 
-                    padding: "12px 15px",
-                    marginTop: "10px"
+                    padding: "12px 15px", 
+                    backgroundColor: "#e3f2fd", 
+                    borderRadius: "6px",
+                    marginTop: "10px",
+                    border: "2px solid #007bff"
                   }}>
-                    <h6 style={{ color: "#2c3e50", margin: 0, fontWeight: "700", fontSize: "1.1rem" }}>Total Amount:</h6>
-                    <h5 style={{ color: '#007bff', margin: 0, fontWeight: "700", fontSize: "1.2rem" }}>₹{totalAmount.toFixed(2)}</h5>
+                    <h5 style={{ color: "#007bff", margin: 0, fontWeight: "700", fontSize: "1.2rem" }}>Total Amount:</h5>
+                    <h5 style={{ color: '#007bff', margin: 0, fontWeight: "700", fontSize: "1.2rem" }}>₹{grandTotal.toFixed(2)}</h5>
                   </div>
                 </Col>
               </Row>
