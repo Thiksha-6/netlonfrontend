@@ -6,13 +6,14 @@ import Quotation from "./components/quotation";
 import Header from "./components/header";
 import Sidebar from "./components/sidebar";
 import Invoice from "./components/invoice";
-import Inventory from "./components/inventory"
+import Inventory from "./components/inventory";
 import 'bootstrap/dist/css/bootstrap.min.css';
 import "./App.css";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false); // 🔥 moved here
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   useEffect(() => {
@@ -23,13 +24,11 @@ function App() {
       }
     };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const handleLogin = () => {
-    setIsLoggedIn(true);
-  };
+  const handleLogin = () => setIsLoggedIn(true);
 
   const handleLogout = () => {
     setIsLoggedIn(false);
@@ -50,29 +49,49 @@ function App() {
     <div className="App">
       {isLoggedIn ? (
         <Router>
-          <Header 
-            onLogout={handleLogout} 
-            onMenuToggle={toggleMobileMenu} 
+          <Header
+            onLogout={handleLogout}
+            onMenuToggle={toggleMobileMenu}
           />
-          <Sidebar 
-            isMobileMenuOpen={isMobileMenuOpen} 
-            setIsMobileMenuOpen={setIsMobileMenuOpen} 
+
+          <Sidebar
+            isMobileMenuOpen={isMobileMenuOpen}
+            setIsMobileMenuOpen={setIsMobileMenuOpen}
+            isCollapsed={isCollapsed}
+            setIsCollapsed={setIsCollapsed}
           />
-          <div 
+
+          <div
             className="main-content"
             style={{
-              marginLeft: windowWidth > 768 ? "250px" : "0",
-              paddingTop: windowWidth > 768 ? "90px" : "70px",
+              marginLeft:
+  windowWidth > 768
+    ? (isCollapsed ? "80px" : "250px")
+    : "0",
+
+              paddingTop: windowWidth > 768 ? "80px" : "70px",
+              paddingBottom: windowWidth <= 768 ? "20px" : "0",
+              minHeight: "100vh",
+              backgroundColor: "#f8f9fa",
+              transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
             }}
             onClick={handleContentClick}
           >
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/quotation" element={<Quotation />} />
-              <Route path="/invoice" element={<Invoice />} />
-              <Route path="/inventory" element={<Inventory />} />
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
+            <div
+              style={{
+                maxWidth: "1400px",
+                margin: "0 auto",
+                padding: windowWidth <= 768 ? "15px" : "20px",
+              }}
+            >
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/quotation" element={<Quotation />} />
+                <Route path="/invoice" element={<Invoice />} />
+                <Route path="/inventory" element={<Inventory />} />
+                <Route path="*" element={<Navigate to="/" />} />
+              </Routes>
+            </div>
           </div>
         </Router>
       ) : (
@@ -83,4 +102,3 @@ function App() {
 }
 
 export default App;
-

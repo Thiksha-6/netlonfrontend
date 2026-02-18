@@ -4,10 +4,11 @@ import {
   FaClipboardList,
   FaCalendarCheck,
   FaMoneyBillWave,
+  FaBars,
 } from "react-icons/fa";
 import axios from "axios";
 
-const Dashboard = () => {
+const Dashboard = ({ isSidebarOpen, toggleSidebar }) => {
   const [quotations, setQuotations] = useState([]);
   const [stats, setStats] = useState({
     total_quotations: 0,
@@ -22,7 +23,15 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
+    // Add resize listener to handle orientation changes
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const handleResize = () => {
+    // Force re-render on resize to adjust layouts
+    setStats(prev => ({ ...prev }));
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -31,11 +40,10 @@ const Dashboard = () => {
       const res = await axios.get(`${API_BASE}/quotations?page=1&per_page=10`);
       const data = res.data;
 
-      console.log("Dashboard data:", data); // For debugging
+      console.log("Dashboard data:", data);
 
       setQuotations(data.quotations || []);
 
-      // Properly map the stats from API response
       setStats({
         total_quotations: data.stats?.total_quotations || data.pagination?.total || 0,
         this_month: data.stats?.this_month || 0,
@@ -49,6 +57,62 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "-";
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+    } catch (e) {
+      return dateString;
+    }
+  };
+
+  const getCustomerName = (quotation) => {
+    return quotation.customerInfo?.billTo || quotation.bill_to || "N/A";
+  };
+
+  const getGrandTotal = (quotation) => {
+    return quotation.totals?.grandTotal || quotation.grand_total || 0;
+  };
+
+  const dashboardCards = [
+    {
+      title: "Total Quotations",
+      value: stats.total_quotations,
+      icon: <FaFileInvoice size={24} />,
+      color: "#4e73df",
+      bgColor: "rgba(78, 115, 223, 0.1)",
+    },
+    {
+      title: "This Month",
+      value: stats.this_month,
+      icon: <FaCalendarCheck size={24} />,
+      color: "#1cc88a",
+      bgColor: "rgba(28, 200, 138, 0.1)",
+    },
+    {
+      title: "Total Value",
+      value: `₹ ${Number(stats.total_value || 0).toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`,
+      icon: <FaMoneyBillWave size={24} />,
+      color: "#f6c23e",
+      bgColor: "rgba(246, 194, 62, 0.1)",
+    },
+    {
+      title: "Recent Records",
+      value: quotations.length,
+      icon: <FaClipboardList size={24} />,
+      color: "#36b9cc",
+      bgColor: "rgba(54, 185, 204, 0.1)",
+    },
+  ];
 
   if (loading) {
     return (
@@ -70,68 +134,21 @@ const Dashboard = () => {
     );
   }
 
-  const dashboardCards = [
-    {
-      title: "Total Quotations",
-      value: stats.total_quotations,
-      icon: <FaFileInvoice size={28} />,
-      color: "#4e73df",
-      bgColor: "rgba(78, 115, 223, 0.1)",
-    },
-    {
-      title: "This Month",
-      value: stats.this_month,
-      icon: <FaCalendarCheck size={28} />,
-      color: "#1cc88a",
-      bgColor: "rgba(28, 200, 138, 0.1)",
-    },
-    {
-      title: "Total Value",
-      value: `₹ ${Number(stats.total_value || 0).toLocaleString("en-IN", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })}`,
-      icon: <FaMoneyBillWave size={28} />,
-      color: "#f6c23e",
-      bgColor: "rgba(246, 194, 62, 0.1)",
-    },
-    {
-      title: "Recent Records",
-      value: quotations.length,
-      icon: <FaClipboardList size={28} />,
-      color: "#36b9cc",
-      bgColor: "rgba(54, 185, 204, 0.1)",
-    },
-  ];
-
-  // Format date properly
-  const formatDate = (dateString) => {
-    if (!dateString) return "-";
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
-    } catch (e) {
-      return dateString;
-    }
-  };
-
-  // Get customer name from nested customerInfo object
-  const getCustomerName = (quotation) => {
-    return quotation.customerInfo?.billTo || quotation.bill_to || "N/A";
-  };
-
-  // Get grand total from nested totals object
-  const getGrandTotal = (quotation) => {
-    return quotation.totals?.grandTotal || quotation.grand_total || 0;
-  };
-
   return (
-    <div style={styles.container}>
-      {/* Header with Welcome Message */}
+    <div style={{
+      ...styles.container,
+      marginLeft: isSidebarOpen ? '250px' : '0',
+      width: isSidebarOpen ? 'calc(100% - 250px)' : '100%',
+    }}>
+      {/* Mobile Header with Menu Toggle */}
+      <div style={styles.mobileHeader}>
+        <button onClick={toggleSidebar} style={styles.menuButton}>
+          <FaBars size={20} color="#4e73df" />
+        </button>
+        <h1 style={styles.mobileHeading}>Dashboard</h1>
+      </div>
+
+      {/* Header - Hidden on Mobile */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.heading}>Dashboard</h1>
@@ -157,7 +174,7 @@ const Dashboard = () => {
               backgroundColor: card.bgColor,
             }}
           >
-            <div>
+            <div style={styles.cardContent}>
               <p style={styles.cardTitle}>{card.title}</p>
               <h3 style={{ ...styles.cardValue, color: card.color }}>
                 {card.value}
@@ -181,11 +198,51 @@ const Dashboard = () => {
         <div style={styles.sectionHeader}>
           <h4 style={styles.sectionTitle}>Recent Quotations</h4>
           <span style={styles.recordCount}>
-            Total: {stats.total_quotations} quotations
+            Total: {stats.total_quotations}
           </span>
         </div>
 
         <div style={styles.tableContainer}>
+          {/* Mobile View - Card Layout */}
+          <div style={styles.mobileCardList}>
+            {quotations.slice(0, 5).map((q) => (
+              <div key={q.id} style={styles.mobileQuotationCard}>
+                <div style={styles.mobileCardHeader}>
+                  <span style={styles.mobileQuotationNo}>{q.quotation_no || `Q-${q.id}`}</span>
+                  <span style={styles.mobileAmount}>
+                    ₹ {Number(getGrandTotal(q)).toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div style={styles.mobileCardBody}>
+                  <div style={styles.mobileInfoRow}>
+                    <span style={styles.mobileLabel}>Customer:</span>
+                    <span style={styles.mobileValue}>{getCustomerName(q)}</span>
+                  </div>
+                  <div style={styles.mobileInfoRow}>
+                    <span style={styles.mobileLabel}>Contact:</span>
+                    <span style={styles.mobileValue}>{q.customerInfo?.contactNo || "-"}</span>
+                  </div>
+                  <div style={styles.mobileInfoRow}>
+                    <span style={styles.mobileLabel}>Date:</span>
+                    <span style={styles.mobileValue}>
+                      {formatDate(q.quotation_date || q.customerInfo?.estimateDate)}
+                    </span>
+                  </div>
+                  <div style={styles.mobileInfoRow}>
+                    <span style={styles.mobileLabel}>Estimate No:</span>
+                    <span style={styles.mobileValue}>
+                      {q.customerInfo?.estimateNo || "-"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop View - Table */}
           <table style={styles.table}>
             <thead>
               <tr>
@@ -252,11 +309,55 @@ const Dashboard = () => {
 
 const styles = {
   container: {
-    paddingTop: "90px",
+    paddingTop: "20px",
     paddingLeft: "25px",
     paddingRight: "25px",
     backgroundColor: "#f8f9fc",
     minHeight: "100vh",
+    transition: "margin-left 0.3s ease-in-out, width 0.3s ease-in-out",
+    boxSizing: "border-box",
+    
+    // Mobile styles
+    "@media (max-width: 768px)": {
+      paddingLeft: "15px",
+      paddingRight: "15px",
+      paddingTop: "70px",
+      marginLeft: "0 !important",
+      width: "100% !important",
+    },
+  },
+  mobileHeader: {
+    display: "none",
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "60px",
+    backgroundColor: "#fff",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+    alignItems: "center",
+    padding: "0 15px",
+    zIndex: 1000,
+    
+    "@media (max-width: 768px)": {
+      display: "flex",
+    },
+  },
+  menuButton: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "10px",
+    marginRight: "15px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mobileHeading: {
+    fontSize: "20px",
+    fontWeight: "700",
+    color: "#5a5c69",
+    margin: 0,
   },
   loadingContainer: {
     paddingTop: "100px",
@@ -266,6 +367,10 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     minHeight: "100vh",
+    
+    "@media (max-width: 768px)": {
+      paddingTop: "80px",
+    },
   },
   loadingSpinner: {
     width: "50px",
@@ -288,6 +393,10 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     minHeight: "100vh",
+    
+    "@media (max-width: 768px)": {
+      paddingTop: "80px",
+    },
   },
   errorText: {
     color: "#e74a3b",
@@ -308,6 +417,10 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: "25px",
+    
+    "@media (max-width: 768px)": {
+      display: "none",
+    },
   },
   heading: {
     margin: 0,
@@ -337,21 +450,29 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "20px",
     marginBottom: "30px",
+    
+    "@media (max-width: 768px)": {
+      gridTemplateColumns: "1fr",
+      gap: "15px",
+    },
   },
   card: {
     background: "#fff",
-    padding: "25px",
-    borderRadius: "15px",
+    padding: "20px",
+    borderRadius: "12px",
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     boxShadow: "0 4px 15px rgba(0,0,0,0.05)",
     transition: "transform 0.2s, box-shadow 0.2s",
     cursor: "pointer",
-    ":hover": {
-      transform: "translateY(-5px)",
-      boxShadow: "0 8px 25px rgba(0,0,0,0.1)",
+    
+    "@media (max-width: 768px)": {
+      padding: "15px",
     },
+  },
+  cardContent: {
+    flex: 1,
   },
   cardTitle: {
     margin: 0,
@@ -360,43 +481,69 @@ const styles = {
     textTransform: "uppercase",
     fontWeight: "700",
     letterSpacing: "0.5px",
+    
+    "@media (max-width: 768px)": {
+      fontSize: "12px",
+    },
   },
   cardValue: {
-    margin: "10px 0 5px",
-    fontSize: "24px",
+    margin: "8px 0 5px",
+    fontSize: "22px",
     fontWeight: "700",
+    
+    "@media (max-width: 768px)": {
+      fontSize: "18px",
+    },
   },
   cardGrowth: {
     margin: 0,
-    fontSize: "12px",
+    fontSize: "11px",
     color: "#1cc88a",
     fontWeight: "600",
   },
   cardIcon: {
-    width: "50px",
-    height: "50px",
+    width: "45px",
+    height: "45px",
     borderRadius: "50%",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    marginLeft: "15px",
+    
+    "@media (max-width: 768px)": {
+      width: "40px",
+      height: "40px",
+    },
   },
   section: {
     background: "#fff",
     padding: "25px",
-    borderRadius: "15px",
+    borderRadius: "12px",
     boxShadow: "0 4px 15px rgba(0,0,0,0.05)",
+    
+    "@media (max-width: 768px)": {
+      padding: "15px",
+    },
   },
   sectionHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: "20px",
+    
+    "@media (max-width: 768px)": {
+      marginBottom: "15px",
+    },
   },
   sectionTitle: {
     margin: 0,
     fontSize: "18px",
     fontWeight: "700",
     color: "#5a5c69",
+    
+    "@media (max-width: 768px)": {
+      fontSize: "16px",
+    },
   },
   recordCount: {
     fontSize: "14px",
@@ -404,6 +551,11 @@ const styles = {
     backgroundColor: "#f8f9fc",
     padding: "5px 12px",
     borderRadius: "15px",
+    
+    "@media (max-width: 768px)": {
+      fontSize: "12px",
+      padding: "4px 10px",
+    },
   },
   tableContainer: {
     overflowX: "auto",
@@ -412,6 +564,60 @@ const styles = {
     width: "100%",
     borderCollapse: "collapse",
     minWidth: "800px",
+    
+    "@media (max-width: 768px)": {
+      display: "none",
+    },
+  },
+  mobileCardList: {
+    display: "none",
+    
+    "@media (max-width: 768px)": {
+      display: "block",
+    },
+  },
+  mobileQuotationCard: {
+    backgroundColor: "#f8f9fc",
+    borderRadius: "10px",
+    padding: "15px",
+    marginBottom: "10px",
+    border: "1px solid #e3e6f0",
+  },
+  mobileCardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "10px",
+    paddingBottom: "10px",
+    borderBottom: "1px solid #e3e6f0",
+  },
+  mobileQuotationNo: {
+    fontWeight: "700",
+    color: "#4e73df",
+    fontSize: "14px",
+  },
+  mobileAmount: {
+    fontWeight: "700",
+    color: "#1cc88a",
+    fontSize: "14px",
+  },
+  mobileCardBody: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
+  mobileInfoRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: "13px",
+  },
+  mobileLabel: {
+    color: "#858796",
+    fontWeight: "500",
+  },
+  mobileValue: {
+    color: "#5a5c69",
+    fontWeight: "500",
   },
   th: {
     padding: "15px",
@@ -427,9 +633,6 @@ const styles = {
   tr: {
     borderBottom: "1px solid #e3e6f0",
     transition: "background-color 0.2s",
-    ":hover": {
-      backgroundColor: "#f8f9fc",
-    },
   },
   td: {
     padding: "15px",
@@ -469,16 +672,28 @@ const styles = {
   emptyState: {
     textAlign: "center",
     padding: "60px 20px",
+    
+    "@media (max-width: 768px)": {
+      padding: "40px 15px",
+    },
   },
   emptyStateText: {
     fontSize: "16px",
     fontWeight: "600",
     color: "#5a5c69",
     marginBottom: "10px",
+    
+    "@media (max-width: 768px)": {
+      fontSize: "14px",
+    },
   },
   emptyStateSubtext: {
     fontSize: "14px",
     color: "#858796",
+    
+    "@media (max-width: 768px)": {
+      fontSize: "12px",
+    },
   },
 };
 
@@ -488,6 +703,12 @@ styleSheet.textContent = `
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+  }
+  
+  @media (max-width: 768px) {
+    body {
+      overflow-x: hidden;
+    }
   }
 `;
 document.head.appendChild(styleSheet);

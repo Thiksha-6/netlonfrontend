@@ -1832,11 +1832,11 @@ GSTIN: ${companyInfo.gstin}`;
   // ================= RENDER =================
   return (
     <div style={{ 
-      marginTop: "70px",
-      padding: "20px", 
-      backgroundColor: "#f8f9fa", 
-      minHeight: "calc(100vh - 70px)",
-      width: "100%" 
+      marginTop: window.innerWidth > 768 ? "70px" : "0px",
+    padding: "20px",
+    backgroundColor: "#f8f9fa",
+    minHeight: window.innerWidth > 768 ? "calc(100vh - 70px)" : "100vh",
+    width: "100%" 
     }}>
       {/* Header */}
       <div style={{ 
