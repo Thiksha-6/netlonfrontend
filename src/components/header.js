@@ -15,7 +15,7 @@ const Header = ({ onLogout, onMenuToggle }) => {
           <FaBars />
         </button>
 
-        <h2 style={styles.logo}>Sri Raja Netlon</h2>
+        <h2 style={styles.logo}>Quotation</h2>
       </div>
 
       <div style={styles.right}>

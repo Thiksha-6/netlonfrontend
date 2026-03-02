@@ -344,6 +344,34 @@ const QuotationPage = () => {
     setSuccess("");
   };
 
+  // ================= VIEW QUOTATION IN NEW TAB =================
+  const handleViewQuotation = (quote) => {
+    const html = generateQuotationHTML(quote);
+    const newWindow = window.open('', '_blank');
+    if (!newWindow) {
+      alert("Popup blocked! Please allow popups for this site.");
+      return;
+    }
+    
+    newWindow.document.write(html);
+    newWindow.document.close();
+    newWindow.focus();
+  };
+
+  // ================= VIEW INVOICE IN NEW TAB =================
+  const handleViewInvoice = (quote) => {
+    const html = generateInvoiceHTML(quote);
+    const newWindow = window.open('', '_blank');
+    if (!newWindow) {
+      alert("Popup blocked! Please allow popups for this site.");
+      return;
+    }
+    
+    newWindow.document.write(html);
+    newWindow.document.close();
+    newWindow.focus();
+  };
+
   // ================= VIEW QUOTATION =================
   const handleView = (quote) => {
     setSelectedQuotation(quote);
@@ -406,311 +434,388 @@ const QuotationPage = () => {
 
   // ================= DOWNLOAD QUOTATION AS PDF =================
   const handleDownloadQuotationPDF = (quote) => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    let yPos = 15;
-    
-    doc.addImage(LOGO_PATH, 'PNG', pageWidth/2 - 50, pageHeight/2 - 50, 100, 100, undefined, 'NONE', 0.1);
-    
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text(companyInfo.name, pageWidth / 2, yPos, { align: "center" });
-    yPos += 7;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(companyInfo.description, pageWidth / 2, yPos, { align: "center" });
-    yPos += 5;
-    doc.text(`Phone: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
-    yPos += 5;
-    doc.text(companyInfo.address, pageWidth / 2, yPos, { align: "center" });
-    yPos += 10;
-    
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("QUOTATION", pageWidth / 2, yPos, { align: "center" });
-    yPos += 10;
-    
-    doc.setLineWidth(0.5);
-    doc.line(14, yPos, pageWidth - 14, yPos);
-    yPos += 10;
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Customer Details:", 14, yPos);
-    yPos += 7;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Name: ${quote.customerInfo.billTo}`, 14, yPos);
-    doc.text(`Quotation No: Q-${quote.id}`, pageWidth - 70, yPos);
-    yPos += 5;
-    
-    doc.text(`Contact: ${quote.customerInfo.contactNo}`, 14, yPos);
-    doc.text(`Estimate No: ${quote.customerInfo.estimateNo || 'N/A'}`, pageWidth - 70, yPos);
-    yPos += 5;
-    
-    doc.text(`State: ${quote.customerInfo.stateName || 'N/A'}`, 14, yPos);
-    doc.text(`Date: ${quote.customerInfo.estimateDate || new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
-    yPos += 5;
-    
-    doc.text(`Customer GSTIN: ${quote.customerInfo.customerGstin || 'N/A'}`, 14, yPos);
-    doc.text(`Branch: ${companyInfo.branch}`, pageWidth - 70, yPos);
-    yPos += 5;
-    
-    doc.setLineWidth(0.5);
-    doc.line(14, yPos, pageWidth - 14, yPos);
-    yPos += 5;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("S.No", 14, yPos);
-    doc.text("Description", 30, yPos);
-    doc.text("Qty", 140, yPos);
-    doc.text("Rate (₹)", 155, yPos);
-    doc.text("Amount (₹)", 180, yPos);
-    yPos += 7;
-    
-    doc.setLineWidth(0.3);
-    doc.line(14, yPos, pageWidth - 14, yPos);
-    yPos += 5;
-    
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    quote.items.forEach((item, index) => {
-      if (yPos > pageHeight - 50) {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let yPos = 15;
+      
+      // Add watermark
+      try {
+        doc.addImage(LOGO_PATH, 'PNG', pageWidth/2 - 50, pageHeight/2 - 50, 100, 100, undefined, 'NONE', 0.1);
+      } catch (imgError) {
+        console.log('Logo image could not be loaded, continuing without watermark');
+      }
+      
+      // Company Header
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(companyInfo.name, pageWidth / 2, yPos, { align: "center" });
+      yPos += 7;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(companyInfo.description, pageWidth / 2, yPos, { align: "center" });
+      yPos += 5;
+      doc.text(`Phone: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
+      yPos += 5;
+      doc.text(companyInfo.address, pageWidth / 2, yPos, { align: "center" });
+      yPos += 10;
+      
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("QUOTATION", pageWidth / 2, yPos, { align: "center" });
+      yPos += 10;
+      
+      // Line
+      doc.setLineWidth(0.5);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 10;
+      
+      // Customer Details
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Customer Details:", 14, yPos);
+      yPos += 7;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Name: ${quote.customerInfo.billTo}`, 14, yPos);
+      doc.text(`Quotation No: Q-${quote.id}`, pageWidth - 70, yPos);
+      yPos += 5;
+      
+      doc.text(`Contact: ${quote.customerInfo.contactNo}`, 14, yPos);
+      doc.text(`Estimate No: ${quote.customerInfo.estimateNo || 'N/A'}`, pageWidth - 70, yPos);
+      yPos += 5;
+      
+      doc.text(`State: ${quote.customerInfo.stateName || 'N/A'}`, 14, yPos);
+      doc.text(`Date: ${quote.customerInfo.estimateDate || new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
+      yPos += 5;
+      
+      doc.text(`Customer GSTIN: ${quote.customerInfo.customerGstin || 'N/A'}`, 14, yPos);
+      doc.text(`Branch: ${companyInfo.branch}`, pageWidth - 70, yPos);
+      yPos += 5;
+      
+      // Line
+      doc.setLineWidth(0.5);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 5;
+      
+      // Table Header
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("S.No", 14, yPos);
+      doc.text("Description", 30, yPos);
+      doc.text("Qty", 140, yPos);
+      doc.text("Rate (₹)", 155, yPos);
+      doc.text("Amount (₹)", 180, yPos);
+      yPos += 7;
+      
+      doc.setLineWidth(0.3);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 5;
+      
+      // Items
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      quote.items.forEach((item, index) => {
+        // Check if we need a new page
+        if (yPos > pageHeight - 50) {
+          doc.addPage();
+          yPos = 15;
+        }
+        
+        doc.text(`${index + 1}`, 14, yPos);
+        
+        const descriptionLines = doc.splitTextToSize(item.description, 100);
+        if (descriptionLines.length > 1) {
+          doc.text(descriptionLines[0], 30, yPos);
+          yPos += 5;
+          for (let i = 1; i < descriptionLines.length; i++) {
+            doc.text(descriptionLines[i], 30, yPos);
+            yPos += 5;
+          }
+          yPos -= 5 * (descriptionLines.length - 1);
+        } else {
+          doc.text(item.description, 30, yPos);
+        }
+        
+        doc.text(item.qty.toString(), 140, yPos);
+        doc.text(`₹${item.rate.toFixed(2)}`, 155, yPos);
+        doc.text(`₹${item.amount.toFixed(2)}`, 180, yPos);
+        yPos += 7;
+      });
+      
+      yPos += 5;
+      doc.setLineWidth(0.5);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 10;
+      
+      // Total
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("TOTAL AMOUNT:", pageWidth - 70, yPos);
+      doc.text(`₹${quote.totals.grandTotal.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+      yPos += 15;
+      
+      // Bank Details
+      if (yPos > pageHeight - 80) {
         doc.addPage();
         yPos = 15;
       }
       
-      doc.text(`${index + 1}`, 14, yPos);
-      
-      const descriptionLines = doc.splitTextToSize(item.description, 100);
-      if (descriptionLines.length > 1) {
-        doc.text(descriptionLines[0], 30, yPos);
-        yPos += 5;
-        for (let i = 1; i < descriptionLines.length; i++) {
-          doc.text(descriptionLines[i], 30, yPos);
-          yPos += 5;
-        }
-        yPos -= 5 * (descriptionLines.length - 1);
-      } else {
-        doc.text(item.description, 30, yPos);
-      }
-      
-      doc.text(item.qty.toString(), 140, yPos);
-      doc.text(`₹${item.rate.toFixed(2)}`, 155, yPos);
-      doc.text(`₹${item.amount.toFixed(2)}`, 180, yPos);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Bank Details:", 14, yPos);
       yPos += 7;
-    });
-    
-    yPos += 5;
-    doc.setLineWidth(0.5);
-    doc.line(14, yPos, pageWidth - 14, yPos);
-    yPos += 10;
-    
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("TOTAL AMOUNT:", pageWidth - 70, yPos);
-    doc.text(`₹${quote.totals.grandTotal.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
-    yPos += 15;
-    
-    if (yPos > pageHeight - 80) {
-      doc.addPage();
-      yPos = 15;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Account Holder: ${bankDetails.accountHolder}`, 14, yPos);
+      yPos += 5;
+      doc.text(`Account Number: ${bankDetails.accountNumber}`, 14, yPos);
+      yPos += 5;
+      doc.text(`IFSC Code: ${bankDetails.ifsc}`, 14, yPos);
+      yPos += 5;
+      doc.text(`Branch: ${bankDetails.branch}`, 14, yPos);
+      yPos += 5;
+      doc.text(`Bank: HDFC BANK`, 14, yPos);
+      yPos += 10;
+      
+      // Footer
+      doc.setFontSize(9);
+      doc.text("Thank you for your business!", pageWidth / 2, yPos, { align: "center" });
+      yPos += 5;
+      doc.text(`For any queries, please contact: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
+      
+      // Generate PDF as blob and create download link
+      const pdfBlob = doc.output('blob');
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      
+      // Create a temporary link element
+      const link = document.createElement('a');
+      link.href = pdfUrl;
+      link.download = `Quotation_${quote.customerInfo.estimateNo || quote.id}.pdf`;
+      link.target = '_blank';
+      
+      // Append to body, click, and remove
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(pdfUrl);
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again or use Print option instead.');
     }
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Bank Details:", 14, yPos);
-    yPos += 7;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Account Holder: ${bankDetails.accountHolder}`, 14, yPos);
-    yPos += 5;
-    doc.text(`Account Number: ${bankDetails.accountNumber}`, 14, yPos);
-    yPos += 5;
-    doc.text(`IFSC Code: ${bankDetails.ifsc}`, 14, yPos);
-    yPos += 5;
-    doc.text(`Branch: ${bankDetails.branch}`, 14, yPos);
-    yPos += 5;
-    doc.text(`Bank: HDFC BANK`, 14, yPos);
-    yPos += 10;
-    
-    doc.setFontSize(9);
-    doc.text("Thank you for your business!", pageWidth / 2, yPos, { align: "center" });
-    yPos += 5;
-    doc.text(`For any queries, please contact: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
-    
-    doc.save(`Quotation_${quote.customerInfo.estimateNo || quote.id}.pdf`);
   };
 
   // ================= DOWNLOAD INVOICE AS PDF =================
   const handleDownloadInvoicePDF = (quote) => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    let yPos = 15;
-    
-    doc.addImage(LOGO_PATH, 'PNG', pageWidth/2 - 50, pageHeight/2 - 50, 100, 100, undefined, 'NONE', 0.1);
-    
-    const totalAmount = quote.items.reduce((sum, item) => sum + item.amount, 0);
-    const cgst = totalAmount * 0.09;
-    const sgst = totalAmount * 0.09;
-    const grandTotal = totalAmount + cgst + sgst;
-    
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text(companyInfo.name, pageWidth / 2, yPos, { align: "center" });
-    yPos += 7;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(companyInfo.description, pageWidth / 2, yPos, { align: "center" });
-    yPos += 5;
-    doc.text(`Phone: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
-    yPos += 5;
-    doc.text(companyInfo.address, pageWidth / 2, yPos, { align: "center" });
-    yPos += 5;
-    doc.text(`GSTIN: ${companyInfo.gstin}`, pageWidth / 2, yPos, { align: "center" });
-    yPos += 10;
-    
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("TAX INVOICE", pageWidth / 2, yPos, { align: "center" });
-    yPos += 10;
-    
-    doc.setLineWidth(0.5);
-    doc.line(14, yPos, pageWidth - 14, yPos);
-    yPos += 10;
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Bill To:", 14, yPos);
-    yPos += 7;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Name: ${quote.customerInfo.billTo}`, 14, yPos);
-    doc.text(`Invoice No: INV-${quote.id}`, pageWidth - 70, yPos);
-    yPos += 5;
-    
-    doc.text(`Contact: ${quote.customerInfo.contactNo}`, 14, yPos);
-    doc.text(`Invoice Date: ${new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
-    yPos += 5;
-    
-    doc.text(`State: ${quote.customerInfo.stateName || 'N/A'}`, 14, yPos);
-    doc.text(`Order No: ${quote.customerInfo.estimateNo || 'N/A'}`, pageWidth - 70, yPos);
-    yPos += 5;
-    
-    doc.text(`Order Date: ${quote.customerInfo.estimateDate || new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
-    yPos += 5;
-    
-    doc.text(`Customer GSTIN: ${quote.customerInfo.customerGstin || 'N/A'}`, 14, yPos);
-    doc.text(`Branch: ${companyInfo.branch}`, pageWidth - 70, yPos);
-    yPos += 10;
-    
-    doc.setLineWidth(0.5);
-    doc.line(14, yPos, pageWidth - 14, yPos);
-    yPos += 5;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("S.No", 14, yPos);
-    doc.text("Description", 30, yPos);
-    doc.text("Qty", 140, yPos);
-    doc.text("Rate (₹)", 155, yPos);
-    doc.text("Amount (₹)", 180, yPos);
-    yPos += 7;
-    
-    doc.setLineWidth(0.3);
-    doc.line(14, yPos, pageWidth - 14, yPos);
-    yPos += 5;
-    
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    quote.items.forEach((item, index) => {
-      if (yPos > pageHeight - 50) {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let yPos = 15;
+      
+      // Add watermark
+      try {
+        doc.addImage(LOGO_PATH, 'PNG', pageWidth/2 - 50, pageHeight/2 - 50, 100, 100, undefined, 'NONE', 0.1);
+      } catch (imgError) {
+        console.log('Logo image could not be loaded, continuing without watermark');
+      }
+      
+      const totalAmount = quote.items.reduce((sum, item) => sum + item.amount, 0);
+      const cgst = totalAmount * 0.09;
+      const sgst = totalAmount * 0.09;
+      const grandTotal = totalAmount + cgst + sgst;
+      
+      // Company Header
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(companyInfo.name, pageWidth / 2, yPos, { align: "center" });
+      yPos += 7;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(companyInfo.description, pageWidth / 2, yPos, { align: "center" });
+      yPos += 5;
+      doc.text(`Phone: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
+      yPos += 5;
+      doc.text(companyInfo.address, pageWidth / 2, yPos, { align: "center" });
+      yPos += 5;
+      doc.text(`GSTIN: ${companyInfo.gstin}`, pageWidth / 2, yPos, { align: "center" });
+      yPos += 10;
+      
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("TAX INVOICE", pageWidth / 2, yPos, { align: "center" });
+      yPos += 10;
+      
+      // Line
+      doc.setLineWidth(0.5);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 10;
+      
+      // Customer Details
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Bill To:", 14, yPos);
+      yPos += 7;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Name: ${quote.customerInfo.billTo}`, 14, yPos);
+      doc.text(`Invoice No: INV-${quote.id}`, pageWidth - 70, yPos);
+      yPos += 5;
+      
+      doc.text(`Contact: ${quote.customerInfo.contactNo}`, 14, yPos);
+      doc.text(`Invoice Date: ${new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
+      yPos += 5;
+      
+      doc.text(`State: ${quote.customerInfo.stateName || 'N/A'}`, 14, yPos);
+      doc.text(`Order No: ${quote.customerInfo.estimateNo || 'N/A'}`, pageWidth - 70, yPos);
+      yPos += 5;
+      
+      doc.text(`Order Date: ${quote.customerInfo.estimateDate || new Date().toLocaleDateString()}`, pageWidth - 70, yPos);
+      yPos += 5;
+      
+      doc.text(`Customer GSTIN: ${quote.customerInfo.customerGstin || 'N/A'}`, 14, yPos);
+      doc.text(`Branch: ${companyInfo.branch}`, pageWidth - 70, yPos);
+      yPos += 10;
+      
+      // Line
+      doc.setLineWidth(0.5);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 5;
+      
+      // Table Header
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("S.No", 14, yPos);
+      doc.text("Description", 30, yPos);
+      doc.text("Qty", 140, yPos);
+      doc.text("Rate (₹)", 155, yPos);
+      doc.text("Amount (₹)", 180, yPos);
+      yPos += 7;
+      
+      doc.setLineWidth(0.3);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 5;
+      
+      // Items
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      quote.items.forEach((item, index) => {
+        if (yPos > pageHeight - 50) {
+          doc.addPage();
+          yPos = 15;
+        }
+        
+        doc.text(`${index + 1}`, 14, yPos);
+        
+        const descriptionLines = doc.splitTextToSize(item.description, 100);
+        if (descriptionLines.length > 1) {
+          doc.text(descriptionLines[0], 30, yPos);
+          yPos += 5;
+          for (let i = 1; i < descriptionLines.length; i++) {
+            doc.text(descriptionLines[i], 30, yPos);
+            yPos += 5;
+          }
+          yPos -= 5 * (descriptionLines.length - 1);
+        } else {
+          doc.text(item.description, 30, yPos);
+        }
+        
+        doc.text(item.qty.toString(), 140, yPos);
+        doc.text(`₹${item.rate.toFixed(2)}`, 155, yPos);
+        doc.text(`₹${item.amount.toFixed(2)}`, 180, yPos);
+        yPos += 7;
+      });
+      
+      yPos += 5;
+      doc.setLineWidth(0.5);
+      doc.line(14, yPos, pageWidth - 14, yPos);
+      yPos += 10;
+      
+      // Totals
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Sub Total:", pageWidth - 70, yPos);
+      doc.text(`₹${totalAmount.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+      yPos += 7;
+      
+      doc.text("CGST (9%):", pageWidth - 70, yPos);
+      doc.text(`₹${cgst.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+      yPos += 7;
+      
+      doc.text("SGST (9%):", pageWidth - 70, yPos);
+      doc.text(`₹${sgst.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+      yPos += 10;
+      
+      doc.setFontSize(12);
+      doc.text("GRAND TOTAL:", pageWidth - 70, yPos);
+      doc.text(`₹${grandTotal.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
+      yPos += 15;
+      
+      // Bank Details
+      if (yPos > pageHeight - 80) {
         doc.addPage();
         yPos = 15;
       }
       
-      doc.text(`${index + 1}`, 14, yPos);
-      
-      const descriptionLines = doc.splitTextToSize(item.description, 100);
-      if (descriptionLines.length > 1) {
-        doc.text(descriptionLines[0], 30, yPos);
-        yPos += 5;
-        for (let i = 1; i < descriptionLines.length; i++) {
-          doc.text(descriptionLines[i], 30, yPos);
-          yPos += 5;
-        }
-        yPos -= 5 * (descriptionLines.length - 1);
-      } else {
-        doc.text(item.description, 30, yPos);
-      }
-      
-      doc.text(item.qty.toString(), 140, yPos);
-      doc.text(`₹${item.rate.toFixed(2)}`, 155, yPos);
-      doc.text(`₹${item.amount.toFixed(2)}`, 180, yPos);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Bank Details:", 14, yPos);
       yPos += 7;
-    });
-    
-    yPos += 5;
-    doc.setLineWidth(0.5);
-    doc.line(14, yPos, pageWidth - 14, yPos);
-    yPos += 10;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Sub Total:", pageWidth - 70, yPos);
-    doc.text(`₹${totalAmount.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
-    yPos += 7;
-    
-    doc.text("CGST (9%):", pageWidth - 70, yPos);
-    doc.text(`₹${cgst.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
-    yPos += 7;
-    
-    doc.text("SGST (9%):", pageWidth - 70, yPos);
-    doc.text(`₹${sgst.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
-    yPos += 10;
-    
-    doc.setFontSize(12);
-    doc.text("GRAND TOTAL:", pageWidth - 70, yPos);
-    doc.text(`₹${grandTotal.toFixed(2)}`, pageWidth - 30, yPos, { align: "right" });
-    yPos += 15;
-    
-    if (yPos > pageHeight - 80) {
-      doc.addPage();
-      yPos = 15;
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Account Holder: ${bankDetails.accountHolder}`, 14, yPos);
+      yPos += 5;
+      doc.text(`Account Number: ${bankDetails.accountNumber}`, 14, yPos);
+      yPos += 5;
+      doc.text(`IFSC Code: ${bankDetails.ifsc}`, 14, yPos);
+      yPos += 5;
+      doc.text(`Branch: ${bankDetails.branch}`, 14, yPos);
+      yPos += 5;
+      doc.text(`Bank: HDFC BANK`, 14, yPos);
+      yPos += 15;
+      
+      // Footer
+      doc.setFontSize(9);
+      doc.text("Thank you for your business!", pageWidth / 2, yPos, { align: "center" });
+      yPos += 5;
+      doc.text(`For any queries, please contact: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
+      
+      // Generate PDF as blob and create download link
+      const pdfBlob = doc.output('blob');
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      
+      // Create a temporary link element
+      const link = document.createElement('a');
+      link.href = pdfUrl;
+      link.download = `Invoice_${quote.customerInfo.estimateNo || quote.id}.pdf`;
+      link.target = '_blank';
+      
+      // Append to body, click, and remove
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(pdfUrl);
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again or use Print option instead.');
     }
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text("Bank Details:", 14, yPos);
-    yPos += 7;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Account Holder: ${bankDetails.accountHolder}`, 14, yPos);
-    yPos += 5;
-    doc.text(`Account Number: ${bankDetails.accountNumber}`, 14, yPos);
-    yPos += 5;
-    doc.text(`IFSC Code: ${bankDetails.ifsc}`, 14, yPos);
-    yPos += 5;
-    doc.text(`Branch: ${bankDetails.branch}`, 14, yPos);
-    yPos += 5;
-    doc.text(`Bank: HDFC BANK`, 14, yPos);
-    yPos += 15;
-    
-    doc.setFontSize(9);
-    doc.text("Thank you for your business!", pageWidth / 2, yPos, { align: "center" });
-    yPos += 5;
-    doc.text(`For any queries, please contact: ${companyInfo.phone}`, pageWidth / 2, yPos, { align: "center" });
-    
-    doc.save(`Invoice_${quote.customerInfo.estimateNo || quote.id}.pdf`);
   };
 
   // ================= PRINT QUOTATION =================
@@ -1575,7 +1680,7 @@ GSTIN: ${companyInfo.gstin}`;
                     </>
                   )}
                   <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600" }}>Total Amount</th>
-                  <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600", width: windowWidth <= 768 ? "100px" : "320px" }}>Actions</th>
+                  <th style={{ padding: "12px 15px", borderBottom: "1px solid #e0e0e0", color: "#495057", fontWeight: "600", width: windowWidth <= 768 ? "100px" : "380px" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1623,7 +1728,7 @@ GSTIN: ${companyInfo.gstin}`;
                     </td>
                     <td style={{ padding: "12px 15px" }}>
                       {windowWidth <= 768 ? (
-                        // Mobile view - Dropdown menu
+                        // Mobile view - Dropdown menu with Download options
                         <Dropdown>
                           <Dropdown.Toggle 
                             variant="outline-secondary" 
@@ -1641,8 +1746,20 @@ GSTIN: ${companyInfo.gstin}`;
                             <span>Actions</span>
                           </Dropdown.Toggle>
                           <Dropdown.Menu style={{ minWidth: "200px" }}>
+                            <Dropdown.Item onClick={() => handleViewQuotation(quote)}>
+                              <Eye size={16} style={{ marginRight: "8px" }} /> View Q (New Tab)
+                            </Dropdown.Item>
+                            <Dropdown.Item onClick={() => handleViewInvoice(quote)}>
+                              <Eye size={16} style={{ marginRight: "8px" }} /> View INV (New Tab)
+                            </Dropdown.Item>
                             <Dropdown.Item onClick={() => handleView(quote)}>
-                              <Eye size={16} style={{ marginRight: "8px" }} /> View
+                              <Eye size={16} style={{ marginRight: "8px" }} /> View (Modal)
+                            </Dropdown.Item>
+                            <Dropdown.Item onClick={() => handleDownloadQuotationPDF(quote)}>
+                              <FileDown size={16} style={{ marginRight: "8px" }} /> Download Q (PDF)
+                            </Dropdown.Item>
+                            <Dropdown.Item onClick={() => handleDownloadInvoicePDF(quote)}>
+                              <FileDown size={16} style={{ marginRight: "8px" }} /> Download INV (PDF)
                             </Dropdown.Item>
                             <Dropdown.Item onClick={() => sendWhatsApp(quote)}>
                               <MessageCircle size={16} style={{ marginRight: "8px" }} /> WhatsApp
@@ -1668,8 +1785,8 @@ GSTIN: ${companyInfo.gstin}`;
                           <Button 
                             size="sm" 
                             variant="outline-info" 
-                            onClick={() => handleView(quote)}
-                            title="View"
+                            onClick={() => handleViewQuotation(quote)}
+                            title="View Quotation in New Tab"
                             style={{ 
                               padding: "4px 8px", 
                               borderRadius: "4px", 
@@ -1680,7 +1797,43 @@ GSTIN: ${companyInfo.gstin}`;
                             }}
                           >
                             <Eye size={16} />
-                            <span style={{ fontSize: "0.8rem" }}>View</span>
+                            <span style={{ fontSize: "0.8rem" }}>View Q</span>
+                          </Button>
+                          
+                          <Button 
+                            size="sm" 
+                            variant="outline-primary" 
+                            onClick={() => handleViewInvoice(quote)}
+                            title="View Invoice in New Tab"
+                            style={{ 
+                              padding: "4px 8px", 
+                              borderRadius: "4px", 
+                              borderWidth: "1px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px"
+                            }}
+                          >
+                            <Eye size={16} />
+                            <span style={{ fontSize: "0.8rem" }}>View INV</span>
+                          </Button>
+                          
+                          <Button 
+                            size="sm" 
+                            variant="outline-secondary" 
+                            onClick={() => handleView(quote)}
+                            title="View in Modal"
+                            style={{ 
+                              padding: "4px 8px", 
+                              borderRadius: "4px", 
+                              borderWidth: "1px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px"
+                            }}
+                          >
+                            <Eye size={16} />
+                            <span style={{ fontSize: "0.8rem" }}>Modal</span>
                           </Button>
                           
                           <Button 
@@ -1699,6 +1852,42 @@ GSTIN: ${companyInfo.gstin}`;
                           >
                             <MessageCircle size={16} />
                             <span style={{ fontSize: "0.8rem" }}>WhatsApp</span>
+                          </Button>
+                          
+                          <Button 
+                            size="sm" 
+                            variant="outline-primary" 
+                            onClick={() => handleDownloadQuotationPDF(quote)}
+                            title="Download Quotation PDF"
+                            style={{ 
+                              padding: "4px 8px", 
+                              borderRadius: "4px", 
+                              borderWidth: "1px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px"
+                            }}
+                          >
+                            <FileDown size={16} />
+                            <span style={{ fontSize: "0.8rem" }}>DL Q</span>
+                          </Button>
+                          
+                          <Button 
+                            size="sm" 
+                            variant="outline-warning" 
+                            onClick={() => handleDownloadInvoicePDF(quote)}
+                            title="Download Invoice PDF"
+                            style={{ 
+                              padding: "4px 8px", 
+                              borderRadius: "4px", 
+                              borderWidth: "1px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px"
+                            }}
+                          >
+                            <FileDown size={16} />
+                            <span style={{ fontSize: "0.8rem" }}>DL INV</span>
                           </Button>
                           
                           <Button 
@@ -1739,7 +1928,7 @@ GSTIN: ${companyInfo.gstin}`;
                           
                           <Button 
                             size="sm" 
-                            variant="outline-warning" 
+                            variant="outline-secondary" 
                             onClick={() => handleEdit(quote.id)}
                             title="Edit"
                             style={{ 
@@ -1754,6 +1943,7 @@ GSTIN: ${companyInfo.gstin}`;
                             <Edit size={16} />
                             <span style={{ fontSize: "0.8rem" }}>Edit</span>
                           </Button>
+                          
                           <Button 
                             size="sm" 
                             variant="outline-danger" 
